@@ -1,0 +1,22 @@
+# Python venv
+.venv/
+
+# Reference repos studied for design but never imported
+reference/
+
+# Emulator runtime artefacts (per-instance state, logs)
+emulator/instance/log
+emulator/instance/run.stderr
+emulator/instance/run.stdout
+emulator/instance/bios.lua
+emulator/instance/data
+emulator/instance/*-*-*-*-*/
+
+# Editor / OS noise
+*.swp
+*~
+.DS_Store
+__pycache__/
+
+# Temp scratch
+/tmp/
