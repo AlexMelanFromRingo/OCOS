@@ -1,6 +1,7 @@
 -- /sys/drv/gpu.lua — GPU driver.
--- M1 scope: own one (gpu, screen) pair, expose simple text-cell primitives.
--- M3 will add buffer allocation + dirty-rect compositor on top of this.
+-- Owns one (gpu, screen) pair and exposes text-cell primitives. The compositor
+-- in lib/ui sits on top of these and adds off-screen buffer allocation +
+-- dirty-rect tracking; the driver itself stays a thin OC-API wrapper.
 
 local M = {}
 

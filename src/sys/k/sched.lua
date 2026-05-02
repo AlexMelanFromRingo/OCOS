@@ -165,6 +165,9 @@ function M.current() return current_proc end
 function M.spawn(fn, opts)
   opts = opts or {}
   opts.parent = opts.parent or current_proc
+  -- Inherit io and shell_env from the parent if not explicitly provided.
+  if not opts.io and opts.parent then opts.io = opts.parent.io end
+  if not opts.shell_env and opts.parent then opts.shell_env = opts.parent.shell_env end
   local p = proc_mod.create(opts)
   local co = coroutine.create(fn)
   proc_mod.attach_coroutine(p, co)
@@ -172,6 +175,28 @@ function M.spawn(fn, opts)
   log.debug("sched", "spawned " .. p.name .. " (id=" .. p.id .. ")")
   ipc.publish("proc.start", { id = p.id, name = p.name })
   return p
+end
+
+function M.wait_pid(pid, timeout)
+  -- Yields the calling process until process `pid` exits. Returns the
+  -- proc.exit payload `{id, name, code[, reason]}` or `nil` on timeout.
+  --
+  -- We listen on the proc.exit IPC channel and bridge the match into a
+  -- synthetic raw signal so we can wait for it with sched.wait — the
+  -- scheduler's filter machinery only inspects raw signal names.
+  local signal_name = "__waitpid__" .. pid
+  local result
+  local handle = ipc.subscribe("proc.exit", function(payload)
+    if payload.id == pid then
+      result = payload
+      computer.pushSignal(signal_name)
+    end
+  end)
+  if not result then
+    M.wait(function(name) return name == signal_name end, timeout)
+  end
+  ipc.unsubscribe(handle)
+  return result
 end
 
 function M.sleep(seconds)

@@ -1,104 +1,151 @@
--- /sys/svc/init.lua — first user process. Spawns the shell.
+-- /sys/svc/init.lua — first user process. Brings up the console, prints
+-- the MOTD, spawns a login shell, and respawns it whenever it exits.
+--
+-- When /etc/boot.selftest exists, init runs the boot-time test suite
+-- instead and shuts the machine down — that path is exercised by
+-- tools/test-boot.sh in the host development environment.
 
 local M = {}
 
-local sched = require("k.sched")
-local log   = require("k.log")
-local term  = require("lib.term.console")
-local vfs   = require("k.vfs")
+local sched   = require("k.sched")
+local log     = require("k.log")
+local vfs     = require("k.vfs")
+local exec    = require("k.exec")
+local console = require("lib.term.console")
+local tty     = require("lib.term.tty")
+local ipc     = require("k.ipc")
 
-local function load_shell()
-  local src, err = vfs.read_all("/bin/sh.lua")
-  if not src then return nil, err end
-  return load(src, "=/bin/sh.lua", "t", _G)
+local function find_writable_mount()
+  for _, m in ipairs(vfs.mounts()) do
+    if m.prefix:sub(1, 5) == "/mnt/" then return m.prefix end
+  end
 end
 
-local function dump_dmesg_to_writable()
-  -- Walk vfs.mounts() and pick any non-boot, non-tmpfs prefix to drop a
-  -- dmesg.log into. Used as a postboot trace until the real GUI can show it.
-  for _, m in ipairs(vfs.mounts()) do
-    if m.prefix:sub(1, 5) == "/mnt/" then
-      local path = m.prefix .. "/dmesg.log"
-      local lines = { _OSVERSION, "boot at uptime " .. tostring(computer.uptime()) }
-      for _, e in ipairs(log.entries()) do
-        lines[#lines + 1] = string.format("[%8.3f] %s %s: %s", e.time, e.level, e.tag, e.msg)
+local function default_streams()
+  return { stdin = tty.stdin(), stdout = tty.stdout(), stderr = tty.stderr() }
+end
+
+local function print_motd(streams)
+  if vfs.exists("/etc/motd") then
+    local h = vfs.open("/etc/motd", "r")
+    if h then
+      while true do
+        local chunk = h:read(4096); if not chunk or chunk == "" then break end
+        streams.stdout:write(chunk)
       end
-      vfs.write_all(path, table.concat(lines, "\n") .. "\n")
-      log.info("init", "wrote " .. path)
-      return
+      h:close()
     end
   end
 end
 
--- Self-test mode: when /etc/boot.selftest exists, run a short boot-up test,
--- write results to /selftest.log on the writable fs, then shut down. Used
--- by tools/test-boot.sh to validate the kernel without needing a real tty.
-local function selftest_active()
-  return vfs.exists("/etc/boot.selftest")
-end
+-- ---- self-test ----------------------------------------------------------
 
-local function append_writable(path, text)
-  for _, m in ipairs(vfs.mounts()) do
-    if m.prefix:sub(1, 5) == "/mnt/" then
-      vfs.write_all(m.prefix .. path, text)
-      return m.prefix .. path
-    end
-  end
-  return nil
-end
+local function selftest_active() return vfs.exists("/etc/boot.selftest") end
 
 local function selftest_run()
   local results = { _OSVERSION, "uptime=" .. tostring(computer.uptime()) }
-  local function ok(name, fn)
-    if _G._BOOT_TRACE then _G._BOOT_TRACE("selftest start: " .. name) end
-    local good, err = pcall(fn)
-    if _G._BOOT_TRACE then _G._BOOT_TRACE("selftest done : " .. name .. " -> " .. (good and "PASS" or "FAIL " .. tostring(err))) end
-    results[#results + 1] = (good and "PASS " or "FAIL ") .. name ..
-      (good and "" or "  -- " .. tostring(err))
+  local function check(name, fn)
+    local ok, err = pcall(fn)
+    results[#results + 1] = (ok and "PASS " or "FAIL ") .. name ..
+      (ok and "" or "  -- " .. tostring(err))
   end
-  ok("vfs.list /sys",   function() assert(#vfs.list("/sys") > 0) end)
-  ok("vfs.list /bin",   function() assert(#vfs.list("/bin") > 0) end)
-  ok("vfs read /init",  function() local s=vfs.read_all("/init.lua"); assert(s and #s>0) end)
-  ok("sched.sleep(0)",  function() sched.sleep(0) end)
-  ok("ipc echo",        function()
-    local ipc = require("k.ipc")
+  check("vfs.list /sys", function() assert(#vfs.list("/sys") > 0) end)
+  check("vfs.list /bin", function() assert(#vfs.list("/bin") > 0) end)
+  check("vfs read /init", function() local s = vfs.read_all("/init.lua"); assert(s and #s > 0) end)
+  check("sched.sleep(0)", function() sched.sleep(0) end)
+  check("ipc echo",       function()
     local got
     local h = ipc.subscribe("test.echo", function(p) got = p end)
     ipc.publish("test.echo", { v = 42 })
     ipc.unsubscribe(h)
     assert(got and got.v == 42, "echo failed")
   end)
-  ok("term.init",       function() term.init() end)
-  ok("gpu writeln",     function() term.writeln(_OSVERSION) end)
+  check("term.init",   function() console.init() end)
+  check("gpu writeln", function() console.writeln(_OSVERSION) end)
+  local function shell_capture(script)
+    local pipe   = require("std.pipe")
+    local stream = require("std.stream")
+    local r, w = pipe.new()
+    local p = exec.exec("/bin/sh.lua", { "-c", script }, {
+      streams   = { stdin = stream.null(), stdout = w, stderr = w },
+      shell_env = { PATH = "/bin", PWD = "/" },
+      caps = { "*" }, name = "sh-test",
+    })
+    assert(p, "exec.exec failed")
+    sched.wait_pid(p.id)
+    pcall(w.close, w)
+    return r:read("a") or ""
+  end
+
+  check("shell pipe", function()
+    local out = shell_capture("echo OCOSLINE | grep CO")
+    assert(out:find("OCOSLINE", 1, true), "pipeline output: " .. tostring(out))
+  end)
+  check("shell &&", function()
+    local out = shell_capture("true && echo OK_AND")
+    assert(out:find("OK_AND", 1, true), "&& output: " .. tostring(out))
+  end)
+  check("shell ||", function()
+    local out = shell_capture("false || echo OK_OR")
+    assert(out:find("OK_OR", 1, true), "|| output: " .. tostring(out))
+  end)
+  check("shell redirect >", function()
+    local mp = find_writable_mount(); assert(mp, "no writable mount")
+    local target = mp .. "/redir.tmp"
+    shell_capture("echo OCOSREDIR > " .. target)
+    local s = vfs.read_all(target) or ""
+    assert(s:find("OCOSREDIR", 1, true), "redir file: " .. tostring(s))
+    pcall(vfs.remove, target)
+  end)
+  check("shell var", function()
+    local out = shell_capture("set X=ocosvar; echo $X")
+    assert(out:find("ocosvar", 1, true), "var output: " .. tostring(out))
+  end)
+
   for _, e in ipairs(log.entries()) do
     results[#results + 1] = string.format("[%8.3f] %s %s: %s", e.time, e.level, e.tag, e.msg)
   end
-  local path = append_writable("/selftest.log", table.concat(results, "\n") .. "\n")
-  log.info("selftest", "wrote " .. tostring(path))
-  if _G._BOOT_TRACE then _G._BOOT_TRACE("selftest done writing, shutting down") end
+  local mp = find_writable_mount()
+  if mp then vfs.write_all(mp .. "/selftest.log", table.concat(results, "\n") .. "\n") end
+  log.info("selftest", "wrote selftest.log; shutting down")
   sched.sleep(0.1)
   computer.shutdown(false)
+end
+
+-- ---- normal boot --------------------------------------------------------
+
+local function spawn_shell(streams)
+  return exec.exec("/bin/sh.lua", {}, {
+    streams   = streams,
+    shell_env = { PATH = "/bin", PWD = "/", HOME = "/home", USER = "root" },
+    caps      = { "*" },
+    name      = "sh",
+  })
 end
 
 function M.main()
   log.info("init", "init service starting")
   if selftest_active() then return selftest_run() end
-  term.init()
-  term.writeln(_OSVERSION)
-  term.writeln("type `help` for the command list")
-  term.writeln("")
-  dump_dmesg_to_writable()
+
+  console.init()
+  local streams = default_streams()
+  console.set_fg(0xCCCCFF)
+  console.writeln(_OSVERSION)
+  console.set_fg(0xCCCCCC)
+  print_motd(streams)
+  console.writeln("")
+
   while true do
-    local sh, err = load_shell()
+    local sh, err = spawn_shell(streams)
     if not sh then
-      term.writeln("init: cannot load /bin/sh.lua: " .. tostring(err))
-      log.error("init", "cannot load shell: " .. tostring(err))
+      streams.stderr:write("init: cannot launch shell: " .. tostring(err) .. "\n")
+      log.error("init", "cannot launch shell: " .. tostring(err))
       sched.sleep(2)
     else
-      sched.spawn(sh, { name = "sh", caps = { "*" } })
-      -- Wait for the shell process to exit, then loop to restart it.
-      local _ = sched.wait(function(name) return name == "__never__" end, 3600)
-      dump_dmesg_to_writable()
+      sched.wait_pid(sh.id)
+      console.writeln("")
+      console.writeln("[shell exited; restarting in 1s]")
+      sched.sleep(1)
     end
   end
 end

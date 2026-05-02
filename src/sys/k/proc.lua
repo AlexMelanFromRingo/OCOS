@@ -23,18 +23,21 @@ function M.create(opts)
   local p = {
     id              = seq,
     name            = opts.name or ("proc-" .. seq),
+    cmdline         = opts.cmdline or opts.name or ("proc-" .. seq),
     status          = "new",                     -- new|ready|running|sleeping|waiting|dead
     parent          = opts.parent,
     children        = {},
     caps            = opts.caps or {},
     env             = opts.env,
+    io              = opts.io,                   -- {stdin, stdout, stderr} streams
+    shell_env       = opts.shell_env,            -- PATH/PWD/USER table
     mailbox         = {},
     exit_code       = nil,
     coroutine       = nil,
-    filter          = nil,                       -- function(name, ...) -> bool
-    deadline        = nil,                       -- uptime() value to wake at
+    filter          = nil,
+    deadline        = nil,
     restart_policy  = opts.restart_policy or "one_shot",
-    kv              = {},                        -- per-process scratch
+    kv              = {},
   }
   procs[p.id] = p
   if opts.parent and procs[opts.parent.id] then

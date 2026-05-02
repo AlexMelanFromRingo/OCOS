@@ -1,19 +1,31 @@
--- /bin/cat.lua
+-- /bin/cat.lua — concatenate files (or stdin) to stdout.
 local args, env = ...
-local term = require("lib.term.console")
-local vfs  = require("k.vfs")
+local vfs = require("k.vfs")
 
-if not args[1] then term.writeln("usage: cat <path>"); return 2 end
-local path = args[1]
-if path:sub(1, 1) ~= "/" then path = vfs.canonical((env.PWD or "/") .. "/" .. path) end
-
-local h, err = vfs.open(path, "r")
-if not h then term.writeln("cat: " .. tostring(err)); return 1 end
-while true do
-  local chunk = h:read(1024)
-  if not chunk then break end
-  term.write(chunk)
+local function dump_stream(stream)
+  while true do
+    local chunk = stream:read(4096)
+    if not chunk or chunk == "" then break end
+    io.write(chunk)
+  end
 end
-h:close()
-term.write("\n")
+
+if #args == 0 then
+  dump_stream(io.stdin); return 0
+end
+
+for _, name in ipairs(args) do
+  local path = name:sub(1, 1) == "/" and name or vfs.canonical((env.PWD or "/") .. "/" .. name)
+  local h, err = vfs.open(path, "r")
+  if not h then
+    io.stderr:write("cat: " .. name .. ": " .. tostring(err) .. "\n")
+    return 1
+  end
+  while true do
+    local chunk = h:read(4096)
+    if not chunk or chunk == "" then break end
+    io.write(chunk)
+  end
+  h:close()
+end
 return 0

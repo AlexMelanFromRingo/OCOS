@@ -12,7 +12,8 @@ local M = {}
 local ipc                                        -- lazy-loaded after init order
 
 function M.init()
-  -- Nothing to do here for now; left as a hook for stats counters later.
+  -- The signal pump owns no state of its own; init exists so boot.lua can
+  -- treat every kernel module uniformly.
 end
 
 function M.bind_ipc(ipc_module)

@@ -20,15 +20,16 @@ function M.init()
 end
 
 local function dump_to_writable_fs(text)
-  -- Try to write a panic dump onto any writable filesystem we can find via
-  -- raw component.invoke (the VFS may not be functional during a panic).
+  -- Write a panic dump onto the first writable filesystem we can find via
+  -- raw component.invoke. The VFS may have been part of what crashed, so we
+  -- avoid using it here.
   local boot_addr = _OCOS and _OCOS.boot_addr
   for addr in component.list("filesystem") do
     if addr ~= boot_addr then
-      local ok, ro = pcall(component.invoke, addr, "isReadOnly")
-      if ok and ro == false then
-        local h = pcall(component.invoke, addr, "open", "/panic.log", "w") and component.invoke(addr, "open", "/panic.log", "w")
-        if h then
+      local ok_ro, ro = pcall(component.invoke, addr, "isReadOnly")
+      if ok_ro and ro == false then
+        local ok_open, h = pcall(component.invoke, addr, "open", "/panic.log", "w")
+        if ok_open and h then
           pcall(component.invoke, addr, "write", h, text)
           pcall(component.invoke, addr, "close", h)
           return addr
