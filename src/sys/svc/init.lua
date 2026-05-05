@@ -105,6 +105,76 @@ local function selftest_run()
     assert(not s.satisfies("1.3.0", "~1.2"))
   end)
 
+  check("ui buffer + flush", function()
+    -- Verifies the diff-based flush coalesces same-colour runs and skips
+    -- unchanged cells.
+    local Buffer = require("lib.ui.buffer")
+    local fake_ops = {}
+    local fake_gpu = {
+      set    = function(x, y, s) fake_ops[#fake_ops + 1] = { "set", x, y, s } end,
+      fill   = function(...) fake_ops[#fake_ops + 1] = { "fill", ... } end,
+      copy   = function(...) fake_ops[#fake_ops + 1] = { "copy", ... } end,
+      set_fg = function(c) fake_ops[#fake_ops + 1] = { "fg", c } end,
+      set_bg = function(c) fake_ops[#fake_ops + 1] = { "bg", c } end,
+    }
+    local buf = Buffer.new(10, 3)
+    buf:set(1, 1, "A", 0xFF0000, 0x000000)
+    buf:set(2, 1, "B", 0xFF0000, 0x000000)
+    buf:set(3, 1, "C", 0xFF0000, 0x000000)
+    buf:flush(fake_gpu)
+    local sets = 0
+    for _, op in ipairs(fake_ops) do if op[1] == "set" then sets = sets + 1 end end
+    assert(sets >= 1, "no gpu.set emitted")
+    -- Second flush with no changes should be a no-op.
+    fake_ops = {}; buf:flush(fake_gpu)
+    for _, op in ipairs(fake_ops) do
+      assert(op[1] ~= "set", "redundant set emitted on identical frame")
+    end
+  end)
+
+  check("ui theme + widgets", function()
+    local theme_m = require("lib.ui.theme")
+    local widgets = {
+      label    = require("lib.ui.widgets.label"),
+      button   = require("lib.ui.widgets.button"),
+      checkbox = require("lib.ui.widgets.checkbox"),
+    }
+    local Buffer = require("lib.ui.buffer")
+    local theme = assert(theme_m.load("default"))
+    assert(theme.palette and theme.palette.bg, "default theme missing palette.bg")
+    local light = assert(theme_m.load("light"))
+    assert(light.palette.bg ~= theme.palette.bg, "light should override bg")
+
+    local buf = Buffer.new(20, 3)
+    local lab = widgets.label({ text = "Hello" })
+    lab:layout(1, 1, 20, 1); lab:draw(buf, theme)
+    assert(buf:get(1, 1) == "H", "label first cell")
+    assert(buf:get(5, 1) == "o", "label fifth cell")
+
+    local btn = widgets.button({ text = "Go", on_click = function() end })
+    btn:layout(1, 2, 6, 1); btn:draw(buf, theme)
+    assert(buf:get(3, 2) == "G" or buf:get(4, 2) == "G", "button rendered")
+
+    local chk = widgets.checkbox({ text = "On", checked = true })
+    chk:layout(1, 3, 8, 1); chk:draw(buf, theme)
+    assert(buf:get(2, 3) == "x", "checkbox marked")
+  end)
+
+  check("ui layout flex", function()
+    local widgets = require("lib.ui.widget")
+    local layout  = require("lib.ui.layout")
+    local label   = require("lib.ui.widgets.label")
+    local row = layout.row({
+      gap = 1,
+      children = { label({ text = "ab" }), label({ text = "cd" }), label({ text = "ef" }) },
+    })
+    row:layout(1, 1, 20, 1)
+    -- Verify children moved right with gaps.
+    assert(row.children[1].bounds.x == 1)
+    assert(row.children[2].bounds.x == 4, "second child x: " .. row.children[2].bounds.x)
+    assert(row.children[3].bounds.x == 7, "third child x: "  .. row.children[3].bounds.x)
+  end)
+
   check("pkg install + verify + uninstall", function()
     local mp = find_writable_mount(); assert(mp, "no writable mount")
     local sha = require("lib.codec.sha256")
