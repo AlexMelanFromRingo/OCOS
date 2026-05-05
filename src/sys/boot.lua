@@ -9,7 +9,7 @@
 
 local boot_addr, read_all = ...
 
-_G._OSVERSION = "OCOS 0.2.1"
+_G._OSVERSION = "OCOS 0.2.2"
 _G._OCOS = { boot_addr = boot_addr, started_at = computer.uptime() }
 
 -- ---- boot mode menu -----------------------------------------------------
@@ -19,12 +19,40 @@ _G._OCOS = { boot_addr = boot_addr, started_at = computer.uptime() }
 -- BIOS already pinned a mode (via eeprom.getData() {mode=...}) we skip
 -- the menu and respect the pre-selected choice.
 
--- Skip the menu entirely when the selftest marker is present — it eats
--- 3 s of the test-boot.sh budget for no reason. We also skip when the
--- BIOS already chose a mode via eeprom.getData() {mode=...}.
-local function _selftest_marker()
+-- Skip the menu entirely when the selftest marker is present (CI run)
+-- or when /etc/boot.cfg pins the mode (operator preset). We also skip
+-- when the BIOS already chose a mode via eeprom.getData() {mode=...}.
+local function _read_file(path)
   local boot_proxy = component.proxy(boot_addr)
-  return boot_proxy and boot_proxy.exists and boot_proxy.exists("/etc/boot.selftest")
+  if not (boot_proxy and boot_proxy.exists and boot_proxy.exists(path)) then return end
+  local h = component.invoke(boot_addr, "open", path, "r"); if not h then return end
+  local parts = {}
+  while true do
+    local chunk = component.invoke(boot_addr, "read", h, math.maxinteger or math.huge)
+    if not chunk then break end
+    parts[#parts + 1] = chunk
+  end
+  component.invoke(boot_addr, "close", h)
+  return table.concat(parts)
+end
+
+local function _selftest_marker()
+  return _read_file("/etc/boot.selftest") ~= nil
+end
+
+if not _G._OCOS_BOOT_MODE then
+  -- /etc/boot.cfg may pin the mode for headless / scripted runs:
+  --   return { mode = "gui" | "console" | "safe" }
+  local cfg_src = _read_file("/etc/boot.cfg")
+  if cfg_src then
+    local fn = load(cfg_src, "=/etc/boot.cfg", "t", {})
+    if fn then
+      local ok, t = pcall(fn)
+      if ok and type(t) == "table" and t.mode then
+        _G._OCOS_BOOT_MODE = tostring(t.mode)
+      end
+    end
+  end
 end
 
 if not _G._OCOS_BOOT_MODE and not _selftest_marker() then

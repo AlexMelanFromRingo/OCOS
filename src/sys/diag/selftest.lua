@@ -87,6 +87,7 @@ function M.run()
     assert(ids.logd and ids.sessiond, "missing services in unit dir")
   end)
 
+
   check("fs cli (mkdir/rm/cp/mv/touch)", function()
     local mp = find_writable_mount(); assert(mp, "no writable mount")
     shell_capture("rm -rf " .. mp .. "/citest")

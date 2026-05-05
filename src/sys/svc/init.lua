@@ -13,14 +13,7 @@ local exec    = require("k.exec")
 local console = require("lib.term.console")
 local svcmgr  = require("lib.svc.manager")
 
-local function trace(msg)
-  pcall(vfs.mkdir, "/var")
-  pcall(vfs.mkdir, "/var/log")
-  local h = vfs.open("/var/log/init.trace", "a")
-  if not h then return end
-  pcall(h.write, h, string.format("[%8.3f] %s\n", computer.uptime(), msg))
-  pcall(h.close, h)
-end
+local trace = require("lib.diag.trace").for_name("init")
 
 local function safe_mode_main()
   trace("safe mode entered")

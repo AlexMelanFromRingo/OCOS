@@ -17,14 +17,7 @@ local theme_m = require("lib.ui.theme")
 local vfs     = require("k.vfs")
 local gpu     = require("drv.gpu")
 
-local function trace(msg)
-  pcall(vfs.mkdir, "/var")
-  pcall(vfs.mkdir, "/var/log")
-  local h = vfs.open("/var/log/uid.trace", "a")
-  if not h then return end
-  h:write(string.format("[%8.3f] %s\n", computer.uptime(), msg))
-  h:close()
-end
+local trace = require("lib.diag.trace").for_name("uid")
 
 trace("uid up")
 

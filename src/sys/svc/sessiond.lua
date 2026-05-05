@@ -24,16 +24,7 @@ local tty     = require("lib.term.tty")
 local users   = require("lib.auth.users")
 local audit   = require("lib.auth.audit")
 
--- Append-mode debug trace so we can see what sessiond did across boots
--- when there's no shell to read dmesg from.
-local function trace(msg)
-  pcall(vfs.mkdir, "/var")
-  pcall(vfs.mkdir, "/var/log")
-  local h = vfs.open("/var/log/sessiond.trace", "a")
-  if not h then return end
-  pcall(h.write, h, string.format("[%8.3f] %s\n", computer.uptime(), msg))
-  pcall(h.close, h)
-end
+local trace = require("lib.diag.trace").for_name("sessiond")
 trace("sessiond up; _OSVERSION=" .. tostring(_OSVERSION))
 
 local function print_motd(streams)

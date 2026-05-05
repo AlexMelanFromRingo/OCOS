@@ -77,13 +77,18 @@ function M.load_units(dir)
   return count
 end
 
+-- Exposed for standalone unit testing (tools/test-svc-topo.lua) — not
+-- part of the public service-manager API.
 local function topo_sort(ids)
   -- Kahn's algorithm. `after` declares a strict happens-before edge.
+  -- Only edges *between members of `ids`* are walked; if a unit depends
+  -- on a disabled (non-autostart) service we silently drop the edge —
+  -- the dependent gets started without waiting for the missing peer.
   local in_deg, edges_to = {}, {}
   for _, id in ipairs(ids) do in_deg[id] = 0; edges_to[id] = {} end
   for _, id in ipairs(ids) do
     for _, dep in ipairs(services[id].unit.after) do
-      if services[dep] then
+      if edges_to[dep] then
         edges_to[dep][#edges_to[dep] + 1] = id
         in_deg[id] = in_deg[id] + 1
       end
@@ -236,6 +241,9 @@ local function on_proc_exit(payload)
     ipc.publish("svc.evt", { id = id, state = svc.state, code = payload.code })
   end
 end
+
+M._topo_sort = topo_sort                          -- exposed for tests only
+M._inject_services = function(t) services = t end -- ditto
 
 function M.set_unit_autostart(id, value)
   if not services or not services[id] then return nil, "no such service: " .. id end
