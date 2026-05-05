@@ -126,8 +126,8 @@ return {
     { path = '/sys/std/pipe.lua', size = 2145, sha256 = '36bc9489e49db484e76b6af4eb16888bb9cfaa97493a5565399fd6fd2d0b69c4' },
     { path = '/sys/std/stream.lua', size = 2826, sha256 = '8db22c024ce1df35bef1ca4d6fc193381a5e4298aa5e5523cb66e9dcb2a90e6e' },
     { path = '/sys/svc/init.lua', size = 15526, sha256 = '25139827a09fce2ca59200af32dfeadd172249867b64a39fac1fefd89a975de9' },
-    { path = '/sys/svc/logd.lua', size = 2315, sha256 = '0bec2d576606f4282eb8d82d40310019de5b79fc39827d7451ef87191d943739' },
-    { path = '/sys/svc/sessiond.lua', size = 3229, sha256 = 'd361f48a0d4d3f5bfc5abb0f21bc8fc83683b9e4140ad19f5a5c0e910e95fb46' },
+    { path = '/sys/svc/logd.lua', size = 2733, sha256 = '32f26e9e0558bf01287a6d8a47f62afc42d3fad190cbf0b8941841cfdcb95456' },
+    { path = '/sys/svc/sessiond.lua', size = 4317, sha256 = '6d69a7d3f6dfc0a4a1859d11fca20dae874c73ce8f8ae17fc60111ec6a49e41b' },
     { path = '/sys/svc/uid.lua', size = 1874, sha256 = '5b602d178d83cdfbf643af80f475153ce5a90abb5e31eb093b6b815f5920dfa7' },
   },
   cleanup = {

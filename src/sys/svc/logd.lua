@@ -13,12 +13,21 @@ local MAX_BYTES = 64 * 1024
 local KEEP      = 4
 
 local function pick_log_path()
+  -- Prefer an aux /mnt/<addr> mount so the kernel log doesn't share the
+  -- boot disk's space, but fall back to the boot fs when there is no
+  -- second writable filesystem (the common single-disk install).
   for _, m in ipairs(vfs.mounts()) do
     if m.prefix:sub(1, 5) == "/mnt/" then
       pcall(vfs.mkdir, m.prefix .. "/var")
       pcall(vfs.mkdir, m.prefix .. "/var/log")
       return m.prefix .. "/var/log/dmesg.log"
     end
+  end
+  local boot = component.proxy(_OCOS.boot_addr)
+  if boot and boot.isReadOnly and not boot.isReadOnly() then
+    pcall(vfs.mkdir, "/var")
+    pcall(vfs.mkdir, "/var/log")
+    return "/var/log/dmesg.log"
   end
 end
 
