@@ -46,34 +46,27 @@ end
 
 function M.repl(opts)
   opts = opts or {}
-  local trace = require("lib.diag.trace").for_name("sh")
   local shell = new_shell(opts.env)
   shell.caps = opts.caps
-  trace("repl entered; banner=" .. tostring(opts.banner and #opts.banner or 0) .. " bytes")
   if opts.banner then console.writeln(opts.banner) end
-  trace("banner written; opening history")
 
   local hist        = history.open(history_path(shell))
-  trace("history opened, entries=" .. tostring(#hist:all()))
   local complete_fn = complete.for_shell(shell)
 
   while not shell.exit_requested do
     local accent = console.fg()
     console.set_fg(0x88FF88)
-    trace("read_line: prompt=" .. tostring(prompt_text(shell)))
     local line = console.read_line(prompt_text(shell), {
       history      = hist,
       complete     = complete_fn,
       on_interrupt = function() return "reset" end,
     })
     console.set_fg(accent)
-    trace("read_line returned: " .. tostring(line))
-    if line == nil then trace("line is nil -> exit repl"); break end
+    if line == nil then break end
     if line ~= "" then
       M.run_string(line, shell, opts.streams)
     end
   end
-  trace("repl exiting with status " .. tostring(shell.last_status))
   return shell.last_status
 end
 
