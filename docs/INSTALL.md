@@ -54,7 +54,7 @@ machine boots straight into a root shell. Flip
 3. From the OpenOS shell:
 
    ```sh
-   wget https://raw.githubusercontent.com/<your-fork>/OCOS/main/dist/ocos-installer.lua /tmp/ocos.lua
+   wget https://raw.githubusercontent.com/AlexMelanFromRingo/OCOS/main/dist/ocos-installer.lua /tmp/ocos.lua
    /tmp/ocos.lua            # or: lua /tmp/ocos.lua
    ```
 
