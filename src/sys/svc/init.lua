@@ -174,6 +174,31 @@ local function selftest_run()
     assert(row.children[3].bounds.x == 7, "third child x: "  .. row.children[3].bounds.x)
   end)
 
+  check("json codec", function()
+    local json = require("lib.codec.json")
+    local round = function(v)
+      local s = json.encode(v)
+      local d, err = json.decode(s)
+      assert(d, "decode: " .. tostring(err))
+      return s, d
+    end
+    -- Primitives
+    assert(json.decode("42") == 42)
+    assert(json.decode("true") == true)
+    assert(json.decode("null") == json.null)
+    assert(json.decode([["hi"]]) == "hi")
+    -- Round-trip an object.
+    local s = round({ a = 1, b = "x", c = { 1, 2, 3 }, d = true })
+    assert(s:find("%[1,2,3%]"), "array encoded: " .. s)
+    -- Nested escape.
+    local s2 = json.encode({ k = "with \"quotes\" and\n newline" })
+    assert(s2:find("\\n", 1, true), "newline escaped: " .. s2)
+    assert(json.decode(s2).k:find("quotes", 1, true))
+    -- Reject malformed.
+    assert(not json.decode("{,}"))
+    assert(not json.decode("[1,]"))
+  end)
+
   check("apps load cleanly", function()
     local Buffer = require("lib.ui.buffer")
     local stub_buf = Buffer.new(80, 24)

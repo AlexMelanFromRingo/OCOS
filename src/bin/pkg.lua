@@ -17,10 +17,20 @@ if cmd == "install" then
   if args[i] == "-f" then force = true; i = i + 1 end
   local source = args[i]
   if not source then return usage() end
-  local mfst, err = install.install_dir(source, { force = force })
+  local mfst, err
+  if source:find("/", 1, true) and not source:match("^https?://") then
+    mfst, err = install.install_dir(source, { force = force })
+  else
+    -- Bare id; resolve through configured registries.
+    local registry = require("lib.pkg.registry")
+    local base, version = registry.resolve(source)
+    if not base then io.stderr:write("pkg: " .. tostring(version) .. "\n"); return 1 end
+    mfst, err = registry.install(base, source, version, { force = force })
+  end
   if not mfst then io.stderr:write("pkg: " .. tostring(err) .. "\n"); return 1 end
-  print(string.format("installed %s %s (%d files)", mfst.id, mfst.version,
-        select("#", next(mfst.files))))
+  local count = 0
+  for _ in pairs(mfst.files) do count = count + 1 end
+  print(string.format("installed %s %s (%d files)", mfst.id, mfst.version, count))
   return 0
 end
 
