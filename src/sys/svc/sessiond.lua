@@ -91,8 +91,17 @@ while not stopping do
   console.writeln("")
   trace("motd printed")
 
+  -- Heavily-instrumented users-check: pinpoints whether the hang is in
+  -- the require chain, the filesystem walk, or somewhere else entirely.
+  trace("calling users.empty")
+  local empty_ok, empty_v = pcall(users.empty)
+  trace("users.empty returned: ok=" .. tostring(empty_ok) .. " v=" .. tostring(empty_v))
+
   local rec, name
-  if users.empty() then
+  if not empty_ok then
+    trace("users.empty errored: " .. tostring(empty_v) .. " — falling back to root")
+    rec, name = { home = "/home", caps = { "*" } }, "root"
+  elseif empty_v then
     rec, name = { home = "/home", caps = { "*" } }, "root"
     trace("users empty -> root mode")
   else
