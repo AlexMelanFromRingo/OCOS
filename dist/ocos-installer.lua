@@ -12,6 +12,13 @@
 -- script lists candidates and prompts.
 
 local args = { ... }
+
+-- OpenOS sandboxes user scripts so `component` and `computer` aren't
+-- guaranteed to be plain globals; require() them with a graceful
+-- fallback so the installer also runs from `lua` REPLs and arbitrary
+-- launchers that DO expose them at the chunk level.
+local component = component or require("component")
+local computer  = computer  or require("computer")
 local invoke = component.invoke
 
 local function eprint(s) io.stderr:write(s .. "\n") end
