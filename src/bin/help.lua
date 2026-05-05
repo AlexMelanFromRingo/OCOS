@@ -15,6 +15,10 @@ local sections = {
   { "Services",
     { "svc list", "svc status <id>", "svc start <id>", "svc stop <id>" }
   },
+  { "Users / security",
+    { "whoami", "login", "useradd <name>", "userdel <name>",
+      "passwd [user]", "sudo <cmd>" }
+  },
   { "Packages",
     { "pkg list", "pkg info <id>", "pkg install [-f] <dir>",
       "pkg uninstall <id>", "pkg verify <id>" }

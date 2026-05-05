@@ -168,6 +168,17 @@ function M.spawn(fn, opts)
   -- Inherit io and shell_env from the parent if not explicitly provided.
   if not opts.io and opts.parent then opts.io = opts.parent.io end
   if not opts.shell_env and opts.parent then opts.shell_env = opts.parent.shell_env end
+  -- Normalise caps: callers may pass either an array {"a", "b"} or a set
+  -- {a=true, b=true}; the proc record always stores a set so cap.check can
+  -- look up by key.
+  if opts.caps and not opts.caps["*"] then
+    local first_key = next(opts.caps)
+    if type(first_key) == "number" then
+      local set = {}
+      for _, c in ipairs(opts.caps) do set[c] = true end
+      opts.caps = set
+    end
+  end
   local p = proc_mod.create(opts)
   local co = coroutine.create(fn)
   proc_mod.attach_coroutine(p, co)

@@ -33,21 +33,53 @@ local function build_env(streams, shell_env, parent_env)
   return env, proc_io
 end
 
+local cap   = require("k.cap")
+local proc  = require("k.proc")
+local audit                                        -- lazy require
+
+local function intersect_caps(parent_caps, requested)
+  if not requested then return {} end
+  local has_star = parent_caps and parent_caps["*"]
+  local out = {}
+  for _, c in ipairs(requested) do
+    if has_star or cap.check(parent_caps, c) then
+      out[#out + 1] = c
+    else
+      audit = audit or require("lib.auth.audit")
+      audit.write({ kind = "cap.refuse_grant",
+        action = c, detail = "parent lacks privilege" })
+    end
+  end
+  return out
+end
+
 function M.exec(path, args, opts)
-  -- opts: {streams, shell_env, caps, name, parent}
+  -- opts: {streams, shell_env, caps (array), name, parent, parent_env}
   opts = opts or {}
   args = args or {}
+  local parent_proc = opts.parent or sched.current()
+  local parent_caps = parent_proc and parent_proc.caps or { ["*"] = true }
+
+  -- Need 'syscall:exec' to spawn other processes once enforcement is on.
+  if cap.is_enforcing() and not cap.check(parent_caps, "syscall:exec",
+        { user = parent_proc and parent_proc.name, action = "exec", target = path }) then
+    return nil, "permission denied: syscall:exec"
+  end
+
   local src, err = vfs.read_all(path)
   if not src then return nil, err end
   local env, proc_io = build_env(opts.streams or {}, opts.shell_env, opts.parent_env)
   local fn, lerr = load(src, "=" .. path, "t", env)
   if not fn then return nil, lerr end
 
+  local granted_array = intersect_caps(parent_caps, opts.caps)
+  local granted_set = cap.expand_set(granted_array)
+
   local proc_opts = {
     name      = opts.name or path:match("([^/]+)$") or path,
     cmdline   = opts.cmdline or path,
-    parent    = opts.parent,
-    caps      = opts.caps,
+    parent    = parent_proc,
+    caps      = granted_set,
     io        = proc_io,
     shell_env = opts.shell_env,
     env       = env,

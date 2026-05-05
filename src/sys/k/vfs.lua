@@ -113,8 +113,24 @@ function Handle:close()
   end
 end
 
+local function check_write_cap(path, mode)
+  if mode == "r" then return true end
+  local cap = require("k.cap")
+  if not cap.is_enforcing() then return true end
+  local sched_mod = require("k.sched")
+  local current = sched_mod.current()
+  local proc_caps = current and current.caps
+  -- Kernel-level callers (no current process) are trusted.
+  if not current then return true end
+  local action = "syscall:write:" .. path
+  return cap.check(proc_caps, action, { proc = current, target = path }), action
+end
+
 function M.open(path, mode)
   mode = mode or "r"
+  path = M.canonical(path)
+  local ok, action = check_write_cap(path, mode)
+  if not ok then return nil, "permission denied: " .. action end
   local proxy, sub = resolve(path)
   if not proxy then return nil, sub end
   local h, err = invoke(proxy.address, "open", sub, mode)

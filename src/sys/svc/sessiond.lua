@@ -1,10 +1,9 @@
 -- /sys/svc/sessiond.lua — interactive session manager.
 --
--- Owns the console for the duration of the session: prints MOTD, hands a
--- shell its TTY streams, and respawns the shell whenever it exits. When
--- /etc/passwd exists (added in M6 alongside PBKDF2), a login prompt gates
--- the session — until then the only user is `root` and we boot straight
--- into a shell.
+-- Owns the console for the duration of the session. When /etc/passwd has
+-- entries, gates the shell with a login prompt and applies the verified
+-- user's capabilities; otherwise drops straight into a privileged root
+-- shell suitable for first-boot configuration.
 
 local sched   = require("k.sched")
 local log     = require("k.log")
@@ -13,6 +12,8 @@ local exec    = require("k.exec")
 local ipc     = require("k.ipc")
 local console = require("lib.term.console")
 local tty     = require("lib.term.tty")
+local users   = require("lib.auth.users")
+local audit   = require("lib.auth.audit")
 
 local function print_motd(streams)
   if not vfs.exists("/etc/motd") then return end
@@ -25,9 +26,43 @@ local function print_motd(streams)
   h:close()
 end
 
-local STOP = "__sessiond_stop"
+-- Read a password from the keyboard without echoing the characters.
+local function read_password()
+  local buf = {}
+  while true do
+    local ev = sched.wait(function(name) return name == "key_down" end)
+    if ev then
+      local _, char, code = ev.args[1], ev.args[2], ev.args[3]
+      if code == 28 then console.writeln(""); return table.concat(buf) end
+      if code == 14 then if #buf > 0 then buf[#buf] = nil end
+      elseif char and char >= 32 and char < 127 then
+        buf[#buf + 1] = string.char(char); console.write("*")
+      end
+    end
+  end
+end
+
+local function login()
+  for attempt = 1, 3 do
+    console.write("login: ")
+    local user = console.read_line()
+    if not user or user == "" then return nil end
+    console.write("password: ")
+    local pw = read_password()
+    if users.verify(user, pw) then
+      audit.write({ kind = "login.ok", user = user })
+      return users.get(user), user
+    end
+    audit.write({ kind = "login.fail", user = user })
+    console.writeln("Login incorrect.")
+  end
+  return nil
+end
+
 local stopping = false
-ipc.subscribe("svc.stop.sessiond", function() stopping = true; computer.pushSignal(STOP) end)
+ipc.subscribe("svc.stop.sessiond", function()
+  stopping = true; computer.pushSignal("__sessiond_stop")
+end)
 
 console.init()
 
@@ -38,11 +73,19 @@ while not stopping do
   print_motd(streams)
   console.writeln("")
 
+  local rec, name
+  if users.empty() then
+    rec, name = { home = "/home", caps = { "*" } }, "root"
+  else
+    rec, name = login()
+    if not rec then sched.sleep(1); goto continue end
+  end
+
   local sh, err = exec.exec("/bin/sh.lua", {}, {
     streams   = streams,
-    shell_env = { PATH = "/bin", PWD = "/", HOME = "/home", USER = "root" },
-    caps      = { "*" },
-    name      = "sh",
+    shell_env = { PATH = "/bin", PWD = rec.home or "/home", HOME = rec.home or "/home", USER = name },
+    caps      = rec.caps or {},
+    name      = "sh:" .. name,
   })
   if not sh then
     streams.stderr:write("sessiond: cannot launch shell: " .. tostring(err) .. "\n")
@@ -50,10 +93,12 @@ while not stopping do
     sched.sleep(2)
   else
     sched.wait_pid(sh.id)
+    audit.write({ kind = "logout", user = name })
     if not stopping then
-      console.writeln("[shell exited; restarting]")
+      console.writeln("[shell exited]")
       sched.sleep(0.2)
     end
   end
+  ::continue::
 end
 return 0

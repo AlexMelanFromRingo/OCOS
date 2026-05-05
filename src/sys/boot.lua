@@ -41,11 +41,34 @@ local panic  = _require("k.panic");  panic.init()
 local signal = _require("k.signal"); signal.init()
 local ipc    = _require("k.ipc");    ipc.init()
 local cap    = _require("k.cap");    cap.init({ enforce = false })
+-- /etc/security.cfg may flip enforcement on after the kernel and VFS are
+-- up. We read it here, after vfs.init, but the file lives on the boot fs
+-- so we have to defer this read to the post-vfs section below.
 local vfs    = _require("k.vfs");    vfs.init({ boot_addr = boot_addr })
 local proc   = _require("k.proc");   proc.init()
 local sched  = _require("k.sched");  sched.init()
 
 log.info("boot", _OSVERSION .. " booting on " .. boot_addr:sub(1, 8))
+
+-- Apply security policy now that the VFS is mounted.
+do
+  local sec_path = "/etc/security.cfg"
+  if vfs.exists(sec_path) then
+    local src = vfs.read_all(sec_path)
+    local fn, err = load(src or "", "=" .. sec_path, "t", {})
+    if fn then
+      local ok, t = pcall(fn)
+      if ok and type(t) == "table" then
+        cap.set_enforce(t.enforce == true)
+        log.info("boot", "security: enforce=" .. tostring(t.enforce == true))
+      else
+        log.warn("boot", "security.cfg eval: " .. tostring(t))
+      end
+    else
+      log.warn("boot", "security.cfg syntax: " .. tostring(err))
+    end
+  end
+end
 
 -- ---- Drivers ------------------------------------------------------------
 
