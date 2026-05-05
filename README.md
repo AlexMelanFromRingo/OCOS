@@ -61,6 +61,20 @@ OCOS/
   emulator/                ocvm instance with OCOS mounted as the boot fs
 ```
 
+## Installing OCOS
+
+See [`docs/INSTALL.md`](docs/INSTALL.md) for full instructions covering
+real Minecraft, [Ocelot Desktop](https://gitlab.com/cc-ru/ocelot/ocelot-desktop)
+emulator, ocvm, and manual loot-disk installs. The short version:
+
+```sh
+# Generate the self-contained installer (writes dist/ocos-installer.lua):
+tools/build-installer.py
+
+# On the target VM running OpenOS, with the installer reachable via HTTP:
+wget https://example/ocos-installer.lua /tmp/ocos.lua && /tmp/ocos.lua
+```
+
 ## Build & run locally
 
 Prerequisites: `lua5.3`, `luarocks`, Python ≥3.10, a C++17 compiler. Build
