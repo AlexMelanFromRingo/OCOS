@@ -12,6 +12,13 @@ local sections = {
     { "ps", "dmesg", "uname [-a]", "uptime", "free", "clear",
       "reboot", "shutdown", "sleep <sec>" }
   },
+  { "Services",
+    { "svc list", "svc status <id>", "svc start <id>", "svc stop <id>" }
+  },
+  { "Packages",
+    { "pkg list", "pkg info <id>", "pkg install [-f] <dir>",
+      "pkg uninstall <id>", "pkg verify <id>" }
+  },
   { "Pipes / redirects",
     { "cmd1 | cmd2", "cmd > file", "cmd >> file", "cmd < file", "cmd 2> file",
       "cmd1 && cmd2", "cmd1 || cmd2", "cmd1 ; cmd2" }
