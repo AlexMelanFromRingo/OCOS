@@ -9,7 +9,7 @@
 
 local boot_addr, read_all = ...
 
-_G._OSVERSION = "OCOS 0.2.0"
+_G._OSVERSION = "OCOS 0.2.1"
 _G._OCOS = { boot_addr = boot_addr, started_at = computer.uptime() }
 
 -- ---- boot mode menu -----------------------------------------------------

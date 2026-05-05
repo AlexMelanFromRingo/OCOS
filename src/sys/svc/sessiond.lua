@@ -24,6 +24,18 @@ local tty     = require("lib.term.tty")
 local users   = require("lib.auth.users")
 local audit   = require("lib.auth.audit")
 
+-- Append-mode debug trace so we can see what sessiond did across boots
+-- when there's no shell to read dmesg from.
+local function trace(msg)
+  pcall(vfs.mkdir, "/var")
+  pcall(vfs.mkdir, "/var/log")
+  local h = vfs.open("/var/log/sessiond.trace", "a")
+  if not h then return end
+  pcall(h.write, h, string.format("[%8.3f] %s\n", computer.uptime(), msg))
+  pcall(h.close, h)
+end
+trace("sessiond up; _OSVERSION=" .. tostring(_OSVERSION))
+
 local function print_motd(streams)
   if not vfs.exists("/etc/motd") then return end
   local h = vfs.open("/etc/motd", "r")
@@ -90,20 +102,25 @@ ipc.subscribe("svc.resume.sessiond", function()
 end)
 
 console.init()
+trace("console.init done")
 
 while not stopping do
+  trace("loop top")
   console.set_fg(0xCCCCFF); console.writeln(_OSVERSION)
   console.set_fg(0xCCCCCC)
   local streams = { stdin = tty.stdin(), stdout = tty.stdout(), stderr = tty.stderr() }
   print_motd(streams)
   console.writeln("")
+  trace("banner painted")
 
   local rec, name
   if users.empty() then
     rec, name = { home = "/home", caps = { "*" } }, "root"
+    trace("users empty, dropping to root")
   else
     rec, name = login()
-    if not rec then sched.sleep(1); goto continue end
+    if not rec then trace("login failed"); sched.sleep(1); goto continue end
+    trace("login ok: " .. name)
   end
 
   local sh, err = exec.exec("/bin/sh.lua", {}, {
@@ -113,13 +130,16 @@ while not stopping do
     name      = "sh:" .. name,
   })
   if not sh then
+    trace("exec.exec FAILED: " .. tostring(err))
     streams.stderr:write("sessiond: cannot launch shell: " .. tostring(err) .. "\n")
     log.error("sessiond", "shell launch failed: " .. tostring(err))
     sched.sleep(2)
   else
+    trace("shell pid=" .. sh.id .. ", entering wait_pid")
     active_sh = sh.id
     sched.wait_pid(sh.id)
     active_sh = nil
+    trace("shell exited")
     audit.write({ kind = "logout", user = name })
     if not stopping then
       console.writeln("[shell exited]")
