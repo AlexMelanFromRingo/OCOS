@@ -2,6 +2,8 @@
 --
 -- Owns the cursor, handles line wrapping, scrolling, colours, and a
 -- blocking line editor that consumes keyboard events from the IPC bus.
+-- Maintains a 1000-line scrollback ring; the mouse wheel scrolls back
+-- through it. Any keypress (or ipc "console.redraw") snaps back to live.
 --
 -- Public API:
 --   console.init()                                set up cursor + colours
@@ -14,17 +16,6 @@
 --   console.set_cursor(x, y)
 --   console.size() -> w, h                        usable area
 --   console.read_line(prompt?, opts?) -> string   blocks for ENTER
---
--- read_line opts:
---   history       — table with {entries, pos} or a provider with
---                   :record(line) / :all() — controls Up/Down recall.
---                   A simple list at history.entries is also accepted.
---   complete      — callback(prefix, line, cursor) -> {strings} for Tab.
---                   Returns either a single string (autofilled directly)
---                   or a list (common-prefix autofill + multi-line print).
---   on_interrupt  — callback() -> "reset" | "abort". Default "abort"
---                   (read_line returns nil). The shell uses "reset" so
---                   Ctrl-C just clears the current line.
 
 local M = {}
 
@@ -36,9 +27,15 @@ local keymap  = require("lib.term.keymap")
 local cur_x, cur_y
 local fg, bg
 
+local SCROLL_CAP = 1000
+local sb_lines                                    -- ring of completed lines (strings)
+local sb_in                                       -- in-progress line buffer
+local scroll_off                                  -- 0 = live; > 0 = N lines back from tail
+local input_handle
+
 local function size() return gpu.size() end
 
-local function scroll_up(n)
+local function scroll_up_screen(n)
   n = n or 1
   local w, h = size()
   if not w or w <= 0 or h <= 0 then return end
@@ -52,7 +49,67 @@ local function newline()
   cur_x = 1
   cur_y = cur_y + 1
   local _, h = size()
-  if h and cur_y > h then scroll_up(cur_y - h) end
+  if h and cur_y > h then scroll_up_screen(cur_y - h) end
+end
+
+local function ring_push(line)
+  sb_lines[#sb_lines + 1] = line
+  if #sb_lines > SCROLL_CAP then table.remove(sb_lines, 1) end
+end
+
+local function snap_to_live()
+  if scroll_off == 0 then return end
+  scroll_off = 0
+  ipc.publish("console.redraw", {})
+end
+
+local function render_scroll()
+  local w, h = size()
+  if not w or w <= 0 or h <= 0 then return end
+  local total = #sb_lines
+  -- The "tail line" is sb_lines[total]; offset N shows lines ending at
+  -- total - N. We render h rows up to that line, blank-padding above.
+  local last = total - scroll_off
+  local first = last - h + 1
+  gpu.set_bg(bg); gpu.set_fg(fg)
+  gpu.fill(1, 1, w, h, " ")
+  for i = 1, h do
+    local idx = first + i - 1
+    if idx >= 1 and idx <= total then
+      local line = sb_lines[idx] or ""
+      gpu.set(1, i, line:sub(1, w))
+    end
+  end
+  -- Status bar at the bottom while scrolled.
+  if scroll_off > 0 then
+    local prev_fg, prev_bg = fg, bg
+    gpu.set_fg(prev_bg); gpu.set_bg(prev_fg)
+    local bar = string.format(" -- scrollback %d / %d  (wheel down or any key to return) --",
+      scroll_off, total)
+    if #bar > w then bar = bar:sub(1, w) else bar = bar .. string.rep(" ", w - #bar) end
+    gpu.set(1, h, bar)
+    gpu.set_fg(prev_fg); gpu.set_bg(prev_bg)
+  end
+end
+
+local function on_scroll(p)
+  -- p comes from oc.signal.scroll: {addr, x, y, dir, player}
+  local dir = p[4] or 0
+  if dir == 0 then return end
+  local total = #sb_lines
+  local _, h = size()
+  if not h or h <= 0 then return end
+  local max_off = math.max(0, total - h + 1)
+  local step = 3
+  scroll_off = math.max(0, math.min(max_off, scroll_off - dir * step))
+  if scroll_off > 0 then
+    render_scroll()
+  else
+    -- Returning to live — re-render the last `h` lines from the ring AND
+    -- ask any active read_line to repaint its prompt on top.
+    render_scroll()
+    ipc.publish("console.redraw", {})
+  end
 end
 
 function M.init()
@@ -60,6 +117,12 @@ function M.init()
   cur_x, cur_y = 1, 1
   gpu.set_fg(fg); gpu.set_bg(bg)
   gpu.clear()
+  sb_lines  = sb_lines  or {}
+  sb_in     = ""
+  scroll_off = 0
+  if not input_handle then
+    input_handle = ipc.subscribe("oc.signal.scroll", on_scroll)
+  end
 end
 
 function M.size() return size() end
@@ -76,6 +139,25 @@ function M.write(s)
   s = tostring(s)
   local w, h = size()
   if not w or w <= 0 or not h or h <= 0 then return end
+
+  -- Ring update: split on newlines; on each \n, complete sb_in into the
+  -- ring; everything else accumulates in sb_in. This keeps the ring's
+  -- view of the world independent of how the GPU paints.
+  local cursor = 1
+  while cursor <= #s do
+    local nl = s:find("\n", cursor, true)
+    if nl then
+      sb_in = sb_in .. s:sub(cursor, nl - 1)
+      ring_push(sb_in); sb_in = ""
+      cursor = nl + 1
+    else
+      sb_in = sb_in .. s:sub(cursor)
+      cursor = #s + 1
+    end
+  end
+
+  if scroll_off > 0 then return end                -- silenced while scrolled
+
   for piece in s:gmatch("[^\n]*\n?") do
     if piece == "" then break end
     local has_nl = piece:sub(-1) == "\n"
@@ -122,22 +204,15 @@ local function key_filter(name)
   return name == "key_down" or name == "clipboard" or name == "__console_redraw"
 end
 
--- Draws a one-cell inverse caret at (x, y) on top of `under_char`. Returns
--- a function that erases the caret (restores `under_char` with the normal
--- palette) — call it before any further painting.
 local function draw_caret(x, y, under_char)
   local nfg = gpu.get_fg() or fg
   local nbg = gpu.get_bg() or bg
   gpu.set_fg(nbg); gpu.set_bg(nfg)
   gpu.set(x, y, under_char or " ")
   gpu.set_fg(nfg); gpu.set_bg(nbg)
-  return function()
-    gpu.set(x, y, under_char or " ")
-  end
+  return function() gpu.set(x, y, under_char or " ") end
 end
 
--- Splits the prefix preceding `cur` into the [last word boundary, cur] slice
--- where a "word" runs over alphanumerics + '_' + '-' + '/' + '.'.
 local function word_back(buf, cur)
   if cur == 0 then return 0 end
   local i = cur
@@ -165,6 +240,7 @@ end
 function M.read_line(prompt, opts)
   opts = opts or {}
   prompt = prompt or ""
+  snap_to_live()
   M.write(prompt)
   local _, sy = M.cursor()
   local prompt_len = M.cursor() - 1
@@ -212,14 +288,11 @@ function M.read_line(prompt, opts)
     return line
   end
 
-  repaint()
-
-  -- Listen for "console.redraw" IPC requests so a VT switch back from the
-  -- GUI session can put the prompt back without the user having to press
-  -- a key. The handler bridges into a raw signal we filter on.
   redraw_handle = ipc.subscribe("console.redraw", function()
     computer.pushSignal("__console_redraw")
   end)
+
+  repaint()
 
   while true do
     local ev = sched.wait(key_filter)
@@ -227,6 +300,7 @@ function M.read_line(prompt, opts)
       M.clear(); M.write(prompt); sy = ({M.cursor()})[2]; clear_caret = nil; repaint()
     elseif ev and ev.name == "key_down" then
       local _, char, code = ev.args[1], ev.args[2], ev.args[3]
+      if scroll_off > 0 then snap_to_live() end
       local action = keymap.action(code, char)
       if action == "enter" then
         return finish(table.concat(buf))
@@ -346,5 +420,6 @@ function M.read_line(prompt, opts)
 end
 
 function M.history() return default_history.entries end
+function M.scrollback_size() return sb_lines and #sb_lines or 0 end
 
 return M

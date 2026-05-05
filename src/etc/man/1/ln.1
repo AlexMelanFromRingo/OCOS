@@ -1,0 +1,23 @@
+ln — create a symbolic link
+
+SYNOPSIS
+  ln -s TARGET LINK
+
+DESCRIPTION
+  Creates a symbolic link at LINK pointing to TARGET. Hard links are
+  not supported (the OC managed filesystem has no inode-level
+  duplication primitive); -s is mandatory.
+
+ENCODING
+  k.vfs encodes a symlink as a side file LINK.lnk whose body holds
+  the target path. vfs.list hides the .lnk suffix; vfs.exists,
+  vfs.open and friends transparently follow links up to 8 levels deep
+  before giving up with "too many levels of symbolic links".
+
+  Use vfs.is_symlink(path) and vfs.readlink(path) for explicit
+  inspection. Removing a symlink with rm deletes the LINK.lnk file,
+  not the target.
+
+EXAMPLES
+  ln -s /etc/themes/dark.lua /home/alex/theme.lua
+  rm /home/alex/theme.lua          removes only the link, not /etc/...

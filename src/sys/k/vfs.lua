@@ -35,8 +35,9 @@ function M.canonical(path)
   return "/" .. table.concat(parts, "/")
 end
 
-local function resolve(path)
-  path = M.canonical(path)
+local function resolve_raw(path)
+  -- Mount-table walk. Does not follow symlinks. Used as the building block
+  -- both for direct resolution and for the link follower below.
   for i = 1, #mounts do
     local m = mounts[i]
     local matched
@@ -59,6 +60,77 @@ local function resolve(path)
     end
   end
   return nil, "no mount for " .. path
+end
+
+-- ---- Symbolic links -----------------------------------------------------
+--
+-- The OC managed filesystem has no native symlink primitive, so we encode
+-- a link as a file named `<name>.lnk` whose body is the target path
+-- (one line, leading/trailing whitespace trimmed). vfs.list, vfs.exists,
+-- vfs.open and friends transparently follow them; vfs.readlink and
+-- vfs.symlink expose the raw form for shell tools (ln -s, ls -l).
+
+local LINK_EXT     = ".lnk"
+local MAX_LINK_DEPTH = 8
+
+local function read_link_target(proxy, sub_with_ext)
+  local h = invoke(proxy.address, "open", sub_with_ext, "r")
+  if not h then return nil end
+  local body = ""
+  while true do
+    local chunk = invoke(proxy.address, "read", h, math.maxinteger)
+    if not chunk or chunk == "" then break end
+    body = body .. chunk
+  end
+  invoke(proxy.address, "close", h)
+  return (body:gsub("[\r\n%s]+$", ""))
+end
+
+local function exists_raw(path)
+  local proxy, sub = resolve_raw(path)
+  if not proxy then return false end
+  return invoke(proxy.address, "exists", sub) and true or false
+end
+
+local function follow_links(path, depth)
+  depth = depth or 0
+  if depth > MAX_LINK_DEPTH then return nil, "too many levels of symbolic links" end
+
+  local parts = {}
+  for p in path:gmatch("[^/]+") do parts[#parts + 1] = p end
+  if #parts == 0 then return path end
+
+  local cur = ""
+  for i, p in ipairs(parts) do
+    cur = cur .. "/" .. p
+    local link_path = cur .. LINK_EXT
+    local proxy, sub = resolve_raw(link_path)
+    if proxy then
+      local ok, exists = pcall(invoke, proxy.address, "exists", sub)
+      if ok and exists then
+        local target = read_link_target(proxy, sub)
+        if target and target ~= "" then
+          if target:sub(1, 1) ~= "/" then
+            local parent = cur:match("(.*)/") or "/"
+            if parent == "" then parent = "/" end
+            target = parent .. "/" .. target
+          end
+          local rest = ""
+          if i < #parts then rest = "/" .. table.concat(parts, "/", i + 1) end
+          local new_path = M.canonical(target .. rest)
+          return follow_links(new_path, depth + 1)
+        end
+      end
+    end
+  end
+  return path
+end
+
+local function resolve(path)
+  path = M.canonical(path)
+  local resolved, err = follow_links(path)
+  if not resolved then return nil, err end
+  return resolve_raw(resolved)
 end
 
 local function sort_mounts()
@@ -140,12 +212,60 @@ end
 
 function M.list(path)
   local proxy, sub = resolve(path); if not proxy then return nil, sub end
-  return invoke(proxy.address, "list", sub)
+  local entries = invoke(proxy.address, "list", sub)
+  if not entries then return entries end
+  -- Hide the .lnk encoding: a file `foo.lnk` is presented to callers as
+  -- `foo` (its symlink name). If both `foo` and `foo.lnk` exist (which
+  -- shouldn't, but callers may create it) the real `foo` wins.
+  local seen, out = {}, {}
+  for _, name in ipairs(entries) do
+    local clean = (name:gsub("/$", ""))
+    if clean:sub(-#LINK_EXT) == LINK_EXT then
+      local stripped = clean:sub(1, -#LINK_EXT - 1)
+      if not seen[stripped] then
+        seen[stripped] = true
+        out[#out + 1] = stripped
+      end
+    else
+      seen[clean] = true
+      out[#out + 1] = name
+    end
+  end
+  return out
 end
 
 function M.exists(path)
-  local proxy, sub = resolve(path); if not proxy then return false end
-  return invoke(proxy.address, "exists", sub) and true or false
+  path = M.canonical(path)
+  local resolved = follow_links(path) or path
+  if exists_raw(resolved) then return true end
+  -- A dangling symlink should still be treated as "exists" from the user's
+  -- perspective; otherwise rm/ls would refuse to touch it.
+  return exists_raw(path .. LINK_EXT)
+end
+
+function M.is_symlink(path)
+  path = M.canonical(path)
+  return exists_raw(path .. LINK_EXT)
+end
+
+function M.readlink(path)
+  path = M.canonical(path)
+  local proxy, sub = resolve_raw(path .. LINK_EXT)
+  if not proxy then return nil, "not a symlink" end
+  if not invoke(proxy.address, "exists", sub) then return nil, "not a symlink" end
+  return read_link_target(proxy, sub)
+end
+
+function M.symlink(target, link_path)
+  link_path = M.canonical(link_path)
+  if exists_raw(link_path) then return nil, "destination exists: " .. link_path end
+  local proxy, sub = resolve_raw(link_path .. LINK_EXT)
+  if not proxy then return nil, sub end
+  local h, err = invoke(proxy.address, "open", sub, "w")
+  if not h then return nil, err end
+  invoke(proxy.address, "write", h, target .. "\n")
+  invoke(proxy.address, "close", h)
+  return true
 end
 
 function M.isdir(path)
@@ -169,6 +289,15 @@ function M.mkdir(path)
 end
 
 function M.remove(path)
+  -- For symlinks, remove the link file itself; never traverse into the
+  -- target. For everything else, follow once and remove the resolved
+  -- node.
+  path = M.canonical(path)
+  if M.is_symlink(path) then
+    local proxy, sub = resolve_raw(path .. LINK_EXT)
+    if not proxy then return nil, sub end
+    return invoke(proxy.address, "remove", sub)
+  end
   local proxy, sub = resolve(path); if not proxy then return nil, sub end
   return invoke(proxy.address, "remove", sub)
 end

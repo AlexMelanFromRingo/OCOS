@@ -22,7 +22,7 @@ local sections = {
     { "ls [path]", "cat [file...]", "head -n <n> [file]", "tail -n <n> [file]",
       "grep <pattern> [file...]", "wc [file...]", "find <path>", "mounts",
       "mkdir [-p] <path>", "rm [-rf] <path>", "cp [-r] <src...> <dst>",
-      "mv <src...> <dst>", "touch <path...>" }
+      "mv <src...> <dst>", "touch <path...>", "ln -s <target> <link>" }
   },
   { "System",
     { "ps", "kill [-9] <pid>", "dmesg", "uname [-a]", "uptime", "free", "clear",

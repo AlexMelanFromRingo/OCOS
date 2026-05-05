@@ -120,6 +120,24 @@ local function selftest_run()
     assert(not proc.get(victim.id), "victim still in proc table after SIGKILL")
   end)
 
+  check("vfs symlinks", function()
+    local mp = find_writable_mount(); assert(mp, "no writable mount")
+    local target = mp .. "/sym-target.txt"
+    local link   = mp .. "/sym-link.txt"
+    pcall(vfs.remove, target)
+    pcall(vfs.remove, link)
+    assert(vfs.write_all(target, "OCOSSYMLINK"), "write target")
+    assert(vfs.symlink(target, link), "create symlink")
+    assert(vfs.is_symlink(link), "is_symlink should be true")
+    assert(vfs.readlink(link) == target, "readlink mismatch")
+    assert(vfs.read_all(link) == "OCOSSYMLINK", "follow on read")
+    assert(vfs.exists(link), "exists should follow link")
+    -- Removing the link must not touch the target.
+    assert(vfs.remove(link), "remove link")
+    assert(vfs.exists(target), "removing link removed target!")
+    pcall(vfs.remove, target)
+  end)
+
   check("modem self-broadcast", function()
     skip_if(not component.list("modem")(), "no modem")
     local modem = require("drv.modem")
@@ -244,6 +262,13 @@ local function selftest_run()
     local pmsg = "Cryptographic Forum Research Group"
     local pmac = hex("a8061dc1305136c6c22b8baf0c0127a9")
     assert(poly.mac(pkey, pmsg) == pmac, "poly1305 vector")
+
+    local sha512 = require("lib.codec.sha512")
+    -- FIPS 180-4 SHA-512("abc")
+    assert(sha512.hex("abc") ==
+      "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a"
+      .. "2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f",
+      "sha512(abc) mismatch")
   end)
 
   check("ui buffer + flush", function()
