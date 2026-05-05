@@ -68,20 +68,28 @@ return function(props)
         buffer:set(b.x + 1 + i, b.y, title:sub(i, i), title_fg, title_bg)
       end
 
+      -- Use ASCII-only glyphs in the title bar — the OC font doesn't
+      -- ship the unicode ▣/▢ shapes and falls back to "×", which made
+      -- both the maximise and close buttons look identical. The X / O
+      -- / _ pair always renders. Each button is drawn against an
+      -- accent-coloured pill so the user can spot them at a glance.
+      local function pill(x, glyph, pill_bg)
+        buffer:set(x,     b.y, glyph, title_fg, pill_bg or title_bg)
+      end
       local cx = b.x + b.w - 2
       if self.props.closable ~= false then
-        buffer:set(cx, b.y, "×", title_fg, title_bg); cx = cx - 2
+        pill(cx, "X", 0xCC4444); cx = cx - 2
       end
       if self.props.maximisable ~= false then
-        local glyph = (self.wm_state and self.wm_state.state == "maximised") and "▢" or "▣"
-        buffer:set(cx, b.y, glyph, title_fg, title_bg); cx = cx - 2
+        local glyph = (self.wm_state and self.wm_state.state == "maximised") and "o" or "O"
+        pill(cx, glyph, 0x4F8AF0); cx = cx - 2
       end
       if self.props.minimisable ~= false then
-        buffer:set(cx, b.y, "_", title_fg, title_bg)
+        pill(cx, "_", 0x808080)
       end
 
       if self.props.resizable ~= false then
-        buffer:set(b.x + b.w - 1, b.y + b.h - 1, "↘", title_fg, bg)
+        buffer:set(b.x + b.w - 1, b.y + b.h - 1, "/", title_fg, bg)
       end
 
       for _, c in ipairs(self.children) do

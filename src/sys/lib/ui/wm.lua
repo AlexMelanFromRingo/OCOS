@@ -32,24 +32,21 @@ function M.new(compositor)
     drag       = nil,                             -- in-flight drag/resize state
     listeners  = {},                              -- for wm:windows_changed
   }, WM)
-  -- A workspace widget that draws windows in z-order. We own its
-  -- children so the compositor's hit-testing walks them in the order
-  -- we maintain.
+  -- A workspace widget that draws windows in z-order. Crucially it
+  -- DOES NOT fill its own bounds — clearing the workspace area would
+  -- erase the wallpaper, desktop icons and any sibling that paints
+  -- earlier (status bar, taskbar). Each window paints opaquely over
+  -- whatever is behind it; gaps stay transparent.
   self.root = widget.new("workspace", {
     measure = function(_, mw, mh) return mw, mh end,
-    _layout_children = function(s)
-      -- Each window keeps its own bounds; nothing to do here.
-    end,
+    _layout_children = function(s) end,
     draw = function(s, buf, theme)
-      local b = s.bounds
-      buf:fill(b.x, b.y, b.w, b.h, " ", theme.palette.fg, theme.palette.bg)
       for _, c in ipairs(s.children) do
         if c.visible then c:draw(buf, theme) end
       end
       s.dirty = false
     end,
     on_event = function(s, ev)
-      -- Walk windows top-down (front to back) so the focused one wins.
       for i = #s.children, 1, -1 do
         if s.children[i].visible and s.children[i]:on_event(ev) then
           return true
@@ -75,15 +72,20 @@ end
 function WM:on_changed(fn) self.listeners[#self.listeners + 1] = fn end
 
 local function default_bounds(self, w, h)
-  local sw, sh = self.root.bounds.w, self.root.bounds.h
-  if sw <= 0 then sw = self.compositor:size() end
-  if sh <= 0 then _, sh = self.compositor:size() end
-  w = math.max(MIN_W, math.min(w or 60, sw - 2))
-  h = math.max(MIN_H, math.min(h or 18, sh - 2))
-  -- Cascade: each new window 2 cells right + down from the previous.
+  -- Coordinates are absolute screen cells. wm.root sits in the middle
+  -- band of the desktop (between status bar and taskbar), so we offset
+  -- by its bounds.x / bounds.y — otherwise the very first window opens
+  -- at (2, 1) and punches a hole through the status bar.
+  local b = self.root.bounds
+  if not b or b.w <= 0 or b.h <= 0 then
+    local sw, sh = self.compositor:size()
+    b = { x = 1, y = 1, w = sw or 80, h = sh or 25 }
+  end
+  w = math.max(MIN_W, math.min(w or 60, b.w - 2))
+  h = math.max(MIN_H, math.min(h or 18, b.h - 2))
   local n = #self.windows
-  local x = 2 + (n * 2) % math.max(1, sw - w - 4)
-  local y = 1 + (n * 2) % math.max(1, sh - h - 4)
+  local x = b.x + 1 + (n * 2) % math.max(1, b.w - w - 4)
+  local y = b.y     + (n * 2) % math.max(1, b.h - h - 4)
   return x, y, w, h
 end
 

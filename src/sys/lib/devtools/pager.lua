@@ -30,11 +30,22 @@ local function clamp(v, lo, hi) return math.max(lo, math.min(hi, v)) end
 
 function M.show(text, opts)
   opts = opts or {}
+  -- If we're running through a pipe (e.g., the GUI terminal hosts the
+  -- shell and stdout is a stream, not a TTY), don't paint to the gpu —
+  -- that would land the page outside the terminal window. Just dump
+  -- text to stdout and let the host scroll. The TTY path keeps the
+  -- interactive `q / j / k / Space` viewer.
+  local out = io.output and io.output() or nil
+  if out and not out._isatty then
+    if out.write then out:write(text) end
+    if text and not text:match("\n$") then out:write("\n") end
+    return 0
+  end
+
   local sw, sh = gpu.size()
   sw, sh = sw or 80, sh or 25
   local lines = wrap(text or "", sw)
   if #lines <= sh - 1 and not opts.always then
-    -- Fits on one screen — just write it.
     console.write(text)
     if not text:match("\n$") then console.writeln("") end
     return 0

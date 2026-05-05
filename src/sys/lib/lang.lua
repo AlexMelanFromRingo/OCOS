@@ -33,11 +33,17 @@ function M.set(code)
   local t, err = load_locale(code)
   if not t then return nil, err end
   current_code, current_table = code, t
+  -- Persist the choice so the next boot honours it. Best-effort —
+  -- read-only boot fs (dev path in ocvm) silently fails; the in-memory
+  -- switch still applies for the running session.
+  pcall(vfs.write_all, "/etc/locale.cfg",
+    string.format("return { default = %q }\n", code))
   ipc.publish("lang.changed", { code = code })
   return true
 end
 
-function M.code() return current_code or "en" end
+function M.code()    return current_code or "en" end
+function M.current() return current_code or "en" end
 
 function M.t(key, ...)
   local v = current_table and current_table[key]

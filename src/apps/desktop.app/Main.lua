@@ -97,28 +97,29 @@ end
 
 -- ---- Top status bar -------------------------------------------------
 
-local title_lbl = label({
-  text = " " .. (_OSVERSION or "OCOS") .. "  ·  " .. USER,
-  fg = (theme.taskbar and theme.taskbar.fg) or theme.palette.fg,
-  bg = (theme.taskbar and theme.taskbar.bg) or theme.palette.surface,
-})
+-- Status bar: high-contrast pill with brand on the left and clock on
+-- the right. We paint with explicit colours instead of theme.surface
+-- because the user reported the bar blending into the wallpaper.
+local SB_BG, SB_FG = 0x1A2B40, 0xE6E6E6
 local status_clock = clock({})
 local status_bar = widget.new("status-bar", {
   measure = function(_, mw) return mw, 1 end,
   _layout_children = function(self)
     local b = self.bounds
-    title_lbl:layout(b.x, b.y, b.w - 9, 1)
-    status_clock:layout(b.x + b.w - 8, b.y, 8, 1)
+    status_clock:layout(b.x + b.w - 9, b.y, 9, 1)
   end,
   draw = function(self, buffer, t)
     local b = self.bounds
-    local bg = (t.taskbar and t.taskbar.bg) or t.palette.surface
-    buffer:fill(b.x, b.y, b.w, b.h, " ", t.palette.fg, bg)
+    buffer:fill(b.x, b.y, b.w, b.h, " ", SB_FG, SB_BG)
+    -- Brand pill (accent bg).
+    local brand = " " .. (_OSVERSION or "OCOS") .. "  user: " .. USER .. " "
+    for i = 1, math.min(#brand, b.w - 12) do
+      buffer:set(b.x + i - 1, b.y, brand:sub(i, i), 0xFFFFFF, t.palette.accent or 0x4F8AF0)
+    end
     for _, c in ipairs(self.children) do c:draw(buffer, t) end
     self.dirty = false
   end,
 })
-status_bar:add_child(title_lbl)
 status_bar:add_child(status_clock)
 
 -- ---- Bottom taskbar -------------------------------------------------
