@@ -1,0 +1,33 @@
+return {
+  ["boot.welcome"]      = "Добро пожаловать в OCOS",
+  ["boot.type_help"]    = "Введите `help`, чтобы увидеть список команд",
+  ["boot.shell_exited"] = "[оболочка завершилась; перезапуск]",
+
+  ["login.prompt"]      = "логин: ",
+  ["login.password"]    = "пароль: ",
+  ["login.welcome"]     = "Добро пожаловать, %s!",
+  ["login.fail"]        = "Неверный логин или пароль.",
+
+  ["dock.files"]        = "Файлы",
+  ["dock.terminal"]     = "Терминал",
+  ["dock.edit"]         = "Редактор",
+  ["dock.logs"]         = "Журнал",
+  ["dock.inspect"]      = "Процессы",
+  ["dock.settings"]     = "Настройки",
+
+  ["settings.title"]    = "Настройки",
+  ["settings.theme"]    = "Тема (Enter — применить):",
+  ["settings.locale"]   = "Язык:",
+
+  ["ui.close"]          = "Закрыть",
+  ["ui.cancel"]         = "Отмена",
+  ["ui.ok"]             = "ОК",
+  ["ui.save"]           = "Сохранить",
+  ["ui.about"]          = "О системе",
+  ["ui.about.body"]     = " %s — работает.",
+
+  ["err.permission"]    = "доступ запрещён",
+  ["err.not_found"]     = "не найдено: %s",
+  ["err.read"]          = "не удалось прочитать %s: %s",
+  ["err.write"]         = "не удалось записать %s: %s",
+}

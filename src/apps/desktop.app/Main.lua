@@ -8,6 +8,7 @@ local _, _, session = ...
 local ui      = require("lib.ui")
 local sched   = require("k.sched")
 local vfs     = require("k.vfs")
+local lang    = require("lib.lang")
 local label   = ui.widgets.label
 local clock   = require("lib.ui.widgets.clock")
 local dock    = require("lib.ui.widgets.dock")
@@ -64,12 +65,12 @@ status_bar:add_child(status_clock)
 
 -- ---- dock --------------------------------------------------------------
 local launcher = dock({ items = {
-  { label = "Files",    on_click = function() launch("/apps/files.app/Main.lua")    end },
-  { label = "Terminal", on_click = function() launch("/apps/terminal.app/Main.lua") end },
-  { label = "Edit",     on_click = function() launch("/apps/edit.app/Main.lua")     end },
-  { label = "Logs",     on_click = function() launch("/apps/dmesg.app/Main.lua")    end },
-  { label = "Inspect",  on_click = function() launch("/apps/inspect.app/Main.lua")  end },
-  { label = "Settings", on_click = function() launch("/apps/settings.app/Main.lua") end },
+  { label = lang.t("dock.files"),    on_click = function() launch("/apps/files.app/Main.lua")    end },
+  { label = lang.t("dock.terminal"), on_click = function() launch("/apps/terminal.app/Main.lua") end },
+  { label = lang.t("dock.edit"),     on_click = function() launch("/apps/edit.app/Main.lua")     end },
+  { label = lang.t("dock.logs"),     on_click = function() launch("/apps/dmesg.app/Main.lua")    end },
+  { label = lang.t("dock.inspect"),  on_click = function() launch("/apps/inspect.app/Main.lua")  end },
+  { label = lang.t("dock.settings"), on_click = function() launch("/apps/settings.app/Main.lua") end },
 } })
 
 -- ---- root composition --------------------------------------------------

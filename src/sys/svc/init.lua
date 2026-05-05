@@ -246,6 +246,41 @@ local function selftest_run()
     assert(not json.decode("[1,]"))
   end)
 
+  check("locale framework", function()
+    local lang = require("lib.lang")
+    assert(lang.t("dock.files") ~= "<dock.files>", "english fallback works")
+    assert(lang.set("uk"), "set uk")
+    assert(lang.t("dock.files"):find("Файли", 1, true), "ukrainian: " .. lang.t("dock.files"))
+    assert(lang.set("en"), "set en")
+    assert(lang.t("dock.files") == "Files")
+    assert(lang.t("missing.key.xyz") == "<missing.key.xyz>", "missing keys are visible")
+    local available = lang.list_available()
+    assert(#available >= 3, "available locales: " .. tostring(#available))
+  end)
+
+  check("stress: 50 procs", function()
+    local proc = require("k.proc")
+    local before = #proc.list()
+    local done = {}
+    for i = 1, 50 do
+      local id_local = i
+      sched.spawn(function() sched.sleep(0); done[id_local] = true end,
+        { name = "stress-" .. i, caps = { "*" } })
+    end
+    for _ = 1, 20 do sched.sleep(0) end
+    local count = 0; for _ in pairs(done) do count = count + 1 end
+    assert(count == 50, "completed " .. count .. "/50")
+    assert(#proc.list() <= before + 2, "proc table leaked: " .. (#proc.list() - before))
+  end)
+
+  check("stress: 1000 ipc msgs", function()
+    local count = 0
+    local h = ipc.subscribe("stress.msg", function() count = count + 1 end)
+    for i = 1, 1000 do ipc.publish("stress.msg", i) end
+    ipc.unsubscribe(h)
+    assert(count == 1000, "delivered " .. count .. "/1000")
+  end)
+
   check("apps load cleanly", function()
     local Buffer = require("lib.ui.buffer")
     local stub_buf = Buffer.new(80, 24)

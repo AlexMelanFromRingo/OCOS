@@ -4,6 +4,11 @@ Each milestone has an explicit **definition of done** (DoD) — something demons
 
 ---
 
+All eight milestones below are landed (commits `02dee12` … `M8`). The
+boot self-test exercises 28 checks across kernel, shell, services,
+package manager, UI compositor + widgets, networking, security, dev
+tools, localisation, and stress; `tools/test-boot.sh` reports them.
+
 ## M0 — Project setup ✅ done
 
 - [x] Repo skeleton: `src/`, `tools/`, `docs/`, `reference/`, `emulator/`.
