@@ -17,10 +17,18 @@ This document covers four paths:
    want to drop OCOS files on a floppy or a host-mounted folder
    directly.
 
-The installer that all on-VM paths use is
-`dist/ocos-installer.lua` — a self-contained Lua chunk that bundles every
-OCOS source file as a long-string and writes it onto a target disk. Run
-`tools/build-installer.py` to regenerate it after editing `src/`.
+The installer is `dist/ocos-installer.lua` — a small (~8 KB) bootstrap
+that fetches `dist/install-manifest.lua` (a Lua table of every file
+plus its expected size and SHA-256), then downloads each source file
+individually from the configured base URL (the GitHub raw URL by
+default) and writes it to a target disk in 4 KiB chunks. After every
+file the installer reads the on-disk size back and aborts if it
+doesn't match the manifest — so partial writes never go undetected.
+
+For offline machines, pass `--local <prefix>` to read each file from
+a host-mounted filesystem instead of HTTP. Run
+`tools/build-installer.py` to regenerate the installer + manifest
+after editing `src/`.
 
 ## Hardware checklist
 
@@ -49,8 +57,11 @@ machine boots straight into a root shell. Flip
 1. Place the machine, drop the components above into the case, attach a
    screen + keyboard. Insert a stock `EEPROM (Lua BIOS)` (the default
    one shipped by the mod). Power on.
-2. Insert an OpenOS floppy (or another Lua OS that has `wget` and a
-   shell) and let the machine boot from it.
+2. Insert an OpenOS floppy (or another Lua OS with `wget` and a shell)
+   and boot from it. **The machine needs an Internet card** for the
+   default flow — the streaming installer downloads every file from
+   GitHub. (For offline installs see the
+   [manual section](#manual--loot-disk-install).)
 3. From the OpenOS shell:
 
    ```sh
@@ -58,20 +69,24 @@ machine boots straight into a root shell. Flip
    /tmp/ocos.lua            # or: lua /tmp/ocos.lua
    ```
 
-   The installer picks the only writable disk that isn't OpenOS, copies
-   every OCOS file, and sets that disk as the new boot address. If you
-   have several writable disks, pass an address prefix:
+   The installer picks the only writable disk that isn't OpenOS,
+   downloads every OCOS file (~270 KiB across ~130 GETs), and sets
+   that disk as the new boot address. If you have several writable
+   disks, pass an address prefix:
 
    ```sh
    /tmp/ocos.lua 88895671
    ```
 
+   To install from a fork:
+
+   ```sh
+   /tmp/ocos.lua 88895671 https://raw.githubusercontent.com/<fork>/OCOS/main
+   ```
+
 4. Eject the OpenOS floppy and reboot the machine. The stock BIOS will
    now boot from your OCOS disk and you should see `OCOS 0.1.0` followed
    by the dock.
-
-If you don't have an internet card, see
-[Manual / loot-disk install](#manual--loot-disk-install).
 
 ## Ocelot Desktop emulator
 
@@ -134,7 +149,23 @@ without rendering.
 ## Manual / loot-disk install
 
 Use this when you don't have an internet card, you're working on a
-totally offline machine, or you just want to skip the installer.
+totally offline machine, or you want to skip the installer.
+
+You can also keep the streaming installer but point it at a host
+mount instead of HTTP:
+
+```sh
+# Assuming an OCOS checkout (with /src and /dist) is mounted at
+# /mnt/loot inside the VM:
+/tmp/ocos.lua --local /mnt/loot
+```
+
+The `--local` mode reads `dist/install-manifest.lua` and each file
+under `src/<path>` directly from the mounted filesystem instead of
+HTTP. Useful when the host folder is exposed to the VM as a loot
+disk, or in fully offline situations.
+
+For pure manual install:
 
 1. Copy the contents of `src/` (the **contents**, not the `src/`
    directory itself) onto a writable filesystem. The result must look
