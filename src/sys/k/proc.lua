@@ -72,4 +72,37 @@ function M.dispose(p)
   procs[p.id] = nil
 end
 
+-- M.kill(pid, sig)
+--
+--   sig = "term" (default): cooperative shutdown. Publishes ipc
+--         "proc.term" with {pid} so the process can clean up, and
+--         delivers raw signal "__sigterm__<pid>" via computer.pushSignal
+--         so any sched.wait() resumes immediately. Well-behaved
+--         processes subscribe to proc.term and exit.
+--   sig = "kill": hard dispose. The proc is marked dead, proc.exit is
+--         published with exit_code = -9, and the coroutine is dropped
+--         on the floor — Lua has no coroutine.throw, so we just stop
+--         resuming it and let GC reap the dead coroutine.
+--
+-- Returns true on success, nil + reason on missing pid.
+function M.kill(pid, sig)
+  local p = procs[pid]
+  if not p then return nil, "no such process" end
+  sig = sig or "term"
+  if sig == "kill" or sig == 9 or sig == "SIGKILL" then
+    p.status = "dead"
+    p.exit_code = -9
+    local ipc = require("k.ipc")
+    ipc.publish("proc.exit", { id = p.id, name = p.name, code = -9, reason = "killed" })
+    M.dispose(p)
+    return true
+  end
+  -- Cooperative term path. Don't dispose — the proc decides when to die.
+  local ipc = require("k.ipc")
+  ipc.publish("proc.term", { pid = pid })
+  pcall(computer.pushSignal, "__sigterm__" .. pid)
+  p.kv.term_requested = true
+  return true
+end
+
 return M

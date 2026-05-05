@@ -80,6 +80,59 @@ local function selftest_run()
     assert(ids.logd and ids.sessiond, "missing services in unit dir")
   end)
 
+  check("fs cli (mkdir/rm/cp/mv/touch)", function()
+    local mp = find_writable_mount(); assert(mp, "no writable mount")
+    local out = shell_capture(table.concat({
+      "mkdir -p " .. mp .. "/citest/sub",
+      "touch " .. mp .. "/citest/a",
+      "echo hi > " .. mp .. "/citest/b",
+      "cp " .. mp .. "/citest/b " .. mp .. "/citest/sub/b",
+      "mv " .. mp .. "/citest/sub/b " .. mp .. "/citest/sub/c",
+      "ls " .. mp .. "/citest/sub",
+    }, "; "))
+    assert(out:find("c", 1, true), "mv failed; ls said: " .. out)
+    assert(vfs.exists(mp .. "/citest/sub/c"), "destination missing after mv")
+    assert(not vfs.exists(mp .. "/citest/sub/b"), "source still present after mv")
+    shell_capture("rm -rf " .. mp .. "/citest")
+    assert(not vfs.exists(mp .. "/citest"), "rm -rf left dir behind")
+  end)
+
+  check("kill cooperative TERM", function()
+    local proc = require("k.proc")
+    local got_term
+    local handle = ipc.subscribe("proc.term", function(p) got_term = p.pid end)
+    local victim = sched.spawn(function()
+      while true do sched.sleep(0.05) end
+    end, { name = "kill-test", caps = { "*" } })
+    proc.kill(victim.id, "term")
+    sched.sleep(0.1)
+    ipc.unsubscribe(handle)
+    assert(got_term == victim.id, "term ipc not seen for pid " .. victim.id)
+    proc.kill(victim.id, "kill")
+    sched.sleep(0.05)
+    assert(not proc.get(victim.id), "victim still in proc table after SIGKILL")
+  end)
+
+  check("sessiond suspend/resume", function()
+    local released, acquired
+    local h1 = ipc.subscribe("ses.tty.released", function() released = true end)
+    local h2 = ipc.subscribe("ses.tty.acquired", function() acquired = true end)
+    -- Kick off sessiond as a service so its subscribers wire up. Kill it
+    -- when the test is done so we don't leave a TTY-grabbing service alive.
+    svcmgr.load_units("/etc/services")
+    local svc = svcmgr.start("sessiond")
+    assert(svc, "could not start sessiond")
+    sched.sleep(0.2)
+    ipc.publish("svc.suspend.sessiond", true)
+    sched.sleep(0.3)
+    assert(released, "sessiond did not publish ses.tty.released on suspend")
+    ipc.publish("svc.resume.sessiond", true)
+    sched.sleep(0.3)
+    assert(acquired, "sessiond did not publish ses.tty.acquired on resume")
+    ipc.unsubscribe(h1); ipc.unsubscribe(h2)
+    pcall(svcmgr.stop, "sessiond")
+  end)
+
   check("sha256 vectors", function()
     local sha = require("lib.codec.sha256")
     assert(sha.hex("") == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -103,6 +156,37 @@ local function selftest_run()
     assert(not s.satisfies("2.0.0", "^1.0"))
     assert(s.satisfies("1.2.3", "~1.2"))
     assert(not s.satisfies("1.3.0", "~1.2"))
+  end)
+
+  check("chacha20 + poly1305 vectors", function()
+    local function hex(s)
+      s = s:gsub("%s", "")
+      local out = {}
+      for i = 1, #s, 2 do out[#out+1] = string.char(tonumber(s:sub(i, i+1), 16)) end
+      return table.concat(out)
+    end
+    local chacha = require("lib.codec.chacha20")
+    local key = ""
+    for i = 0, 31 do key = key .. string.char(i) end
+    local nonce = hex("000000000000004a00000000")
+    local pt = "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it."
+    local expected = hex(
+      "6e2e359a2568f98041ba0728dd0d6981" ..
+      "e97e7aec1d4360c20a27afccfd9fae0b" ..
+      "f91b65c5524733ab8f593dabcd62b357" ..
+      "1639d624e65152ab8f530c359f0861d8" ..
+      "07ca0dbf500d6a6156a38e088a22b65e" ..
+      "52bc514d16ccf806818ce91ab7793736" ..
+      "5af90bbf74a35be6b40b8eedf2785e42" ..
+      "874d")
+    assert(chacha.encrypt(key, nonce, pt, 1) == expected, "chacha20 vector")
+    assert(chacha.decrypt(key, nonce, expected, 1) == pt, "chacha20 round-trip")
+
+    local poly = require("lib.codec.poly1305")
+    local pkey = hex("85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b")
+    local pmsg = "Cryptographic Forum Research Group"
+    local pmac = hex("a8061dc1305136c6c22b8baf0c0127a9")
+    assert(poly.mac(pkey, pmsg) == pmac, "poly1305 vector")
   end)
 
   check("ui buffer + flush", function()

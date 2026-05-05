@@ -1,8 +1,8 @@
 -- /sys/lib/term/keymap.lua — translates LWJGL key codes into editor actions.
 --
 -- The console's line editor and the M3 widgets both consume the same
--- action-name dictionary. Keep this list explicit; keys not listed here
--- fall through to the printable-character path.
+-- action-name dictionary. Keys not listed here fall through to the
+-- printable-character path.
 
 local M = {}
 
@@ -22,8 +22,14 @@ local CODE_TO_ACTION = {
 }
 
 local CHAR_TO_ACTION = {
+  [1]  = "home",                                   -- Ctrl-A
   [3]  = "interrupt",                              -- Ctrl-C
   [4]  = "eof",                                    -- Ctrl-D
+  [5]  = "end",                                    -- Ctrl-E
+  [11] = "kill_to_eol",                            -- Ctrl-K
+  [12] = "redraw",                                 -- Ctrl-L
+  [21] = "clear_line",                             -- Ctrl-U
+  [23] = "delete_word_back",                       -- Ctrl-W
 }
 
 function M.action(code, char)

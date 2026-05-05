@@ -8,10 +8,12 @@
 
 local M = {}
 
-local console = require("lib.term.console")
-local lexer   = require("lib.sh.lexer")
-local parser  = require("lib.sh.parser")
-local runner  = require("lib.sh.runner")
+local console  = require("lib.term.console")
+local lexer    = require("lib.sh.lexer")
+local parser   = require("lib.sh.parser")
+local runner   = require("lib.sh.runner")
+local history  = require("lib.sh.history")
+local complete = require("lib.sh.complete")
 
 local function new_shell(env)
   return {
@@ -37,17 +39,28 @@ local function prompt_text(shell)
   return string.format("[%s] %s$ ", shell.env.PWD or "/", shell.env.USER or "")
 end
 
+local function history_path(shell)
+  local home = shell.env.HOME or "/home"
+  return home .. "/.sh_history"
+end
+
 function M.repl(opts)
   opts = opts or {}
   local shell = new_shell(opts.env)
   shell.caps = opts.caps
-  local banner = opts.banner
-  if banner then console.writeln(banner) end
+  if opts.banner then console.writeln(opts.banner) end
+
+  local hist        = history.open(history_path(shell))
+  local complete_fn = complete.for_shell(shell)
 
   while not shell.exit_requested do
     local accent = console.fg()
     console.set_fg(0x88FF88)
-    local line = console.read_line(prompt_text(shell))
+    local line = console.read_line(prompt_text(shell), {
+      history      = hist,
+      complete     = complete_fn,
+      on_interrupt = function() return "reset" end,
+    })
     console.set_fg(accent)
     if line == nil then break end
     if line ~= "" then

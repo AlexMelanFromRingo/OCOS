@@ -38,6 +38,7 @@ INSTALLER_SOURCE = r"""-- OCOS streaming installer.
 --   /tmp/ocos.lua 88895671                   -- explicit target by address prefix
 --   /tmp/ocos.lua 88895671 https://my.fork   -- target + custom base URL
 --   /tmp/ocos.lua --local /mnt/loot          -- read files from a local mount instead of HTTP
+--   /tmp/ocos.lua --flash-eeprom              -- (also) overwrite the EEPROM with OCOS BIOS
 
 local args = { ... }
 
@@ -52,7 +53,7 @@ local function ok(s)     io.write("[ok] " .. s .. "\n") end
 
 -- ---- arg parsing -------------------------------------------------------
 
-local target_prefix, base_url, local_root
+local target_prefix, base_url, local_root, flash_eeprom
 do
   local i = 1
   while i <= #args do
@@ -61,6 +62,9 @@ do
       local_root = args[i + 1]
       if not local_root then eprint("--local needs a path"); return 2 end
       i = i + 2
+    elseif a == "--flash-eeprom" then
+      flash_eeprom = true
+      i = i + 1
     elseif a:match("^https?://") then
       base_url = a
       i = i + 1
@@ -276,6 +280,40 @@ if computer.setBootAddress then
   ok("set boot address to " .. target_addr:sub(1, 8))
 end
 
+-- Optional EEPROM flash. We pull the minified BIOS source (whose path the
+-- builder placed in mfst.bios) and overwrite the EEPROM with it. Skipped
+-- unless --flash-eeprom was passed because flashing is one-way without a
+-- spare EEPROM to restore the stock BIOS from.
+if flash_eeprom and mfst.bios then
+  local eeprom_addr = component.list("eeprom")()
+  if not eeprom_addr then
+    eprint("install: --flash-eeprom but no EEPROM component present")
+  else
+    local bios_src
+    if local_root then
+      local fs = require("filesystem")
+      local h, herr = fs.open(local_root .. "/" .. mfst.bios, "r")
+      if not h then eprint("install: cannot read " .. mfst.bios .. ": " .. tostring(herr))
+      else
+        local parts = {}
+        while true do local d = h:read(4096); if not d or d == "" then break end; parts[#parts + 1] = d end
+        h:close(); bios_src = table.concat(parts)
+      end
+    else
+      bios_src = fetch_http(base_url .. "/" .. mfst.bios)
+    end
+    if bios_src then
+      local sok, serr = pcall(invoke, eeprom_addr, "set", bios_src)
+      if not sok then eprint("install: eeprom.set: " .. tostring(serr))
+      else
+        pcall(invoke, eeprom_addr, "setLabel", "OCOS BIOS")
+        pcall(invoke, eeprom_addr, "setData", target_addr)
+        ok("flashed EEPROM (" .. #bios_src .. " B)")
+      end
+    end
+  end
+end
+
 ok(string.format("wrote %d files. Reboot to start OCOS.", total))
 return 0
 """
@@ -308,7 +346,7 @@ def collect(root: Path) -> list[dict]:
     return out
 
 
-def render_manifest(files: list[dict]) -> str:
+def render_manifest(files: list[dict], bios_rel: str | None) -> str:
     lines = ["return {", "  files = {"]
     for f in files:
         lines.append(
@@ -319,8 +357,36 @@ def render_manifest(files: list[dict]) -> str:
     for path in sorted(DEV_ONLY):
         lines.append(f"    {path!r},")
     lines.append("  },")
+    if bios_rel:
+        lines.append(f"  bios = {bios_rel!r},")
     lines.append("}")
     return "\n".join(lines) + "\n"
+
+
+def build_bios(repo_root: Path, dist_dir: Path) -> str | None:
+    """Run efi/build.py and copy the minified output into dist/."""
+    import subprocess
+
+    efi_src = repo_root / "efi" / "ocos.efi.lua"
+    if not efi_src.exists():
+        return None
+    venv_py = repo_root / ".venv" / "bin" / "python"
+    py = str(venv_py) if venv_py.exists() else "python3"
+    try:
+        subprocess.run([py, str(repo_root / "efi" / "build.py")], check=True,
+                       cwd=repo_root, capture_output=True)
+    except subprocess.CalledProcessError as e:                # pragma: no cover
+        print(f"warning: efi/build.py failed: {e.stderr.decode(errors='replace')}",
+              flush=True)
+        return None
+
+    minified = repo_root / "efi" / "ocos.efi.min.lua"
+    if not minified.exists():
+        return None
+    dist_dir.mkdir(parents=True, exist_ok=True)
+    dest = dist_dir / "ocos.bios.lua"
+    dest.write_bytes(minified.read_bytes())
+    return "dist/ocos.bios.lua"
 
 
 def main() -> int:
@@ -336,12 +402,18 @@ def main() -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     mfst_path.parent.mkdir(parents=True, exist_ok=True)
 
+    repo_root = Path(__file__).resolve().parent.parent
+    bios_rel = build_bios(repo_root, mfst_path.parent)
+
     files = collect(src_root)
     out_path.write_text(INSTALLER_SOURCE, encoding="utf-8")
-    mfst_path.write_text(render_manifest(files), encoding="utf-8")
+    mfst_path.write_text(render_manifest(files, bios_rel), encoding="utf-8")
 
     print(f"installer:  {out_path}  ({out_path.stat().st_size} bytes)")
     print(f"manifest:   {mfst_path}  ({len(files)} files, {mfst_path.stat().st_size} bytes)")
+    if bios_rel:
+        bios_path = mfst_path.parent / "ocos.bios.lua"
+        print(f"bios:       {bios_path}  ({bios_path.stat().st_size} bytes)")
     return 0
 
 

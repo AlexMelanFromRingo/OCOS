@@ -84,6 +84,18 @@ machine boots straight into a root shell. Flip
    /tmp/ocos.lua 88895671 https://raw.githubusercontent.com/<fork>/OCOS/main
    ```
 
+   To also overwrite the machine's EEPROM with the OCOS BIOS (the
+   tooltip shows "OCOS BIOS" in the inventory and the boot splash
+   gains an OCOS banner), pass `--flash-eeprom`:
+
+   ```sh
+   /tmp/ocos.lua --flash-eeprom
+   ```
+
+   This is one-way without a spare EEPROM to write the stock OC BIOS
+   back. OCOS works just fine on the stock BIOS, so flashing is purely
+   cosmetic.
+
 4. Eject the OpenOS floppy and reboot the machine. The stock BIOS will
    now boot from your OCOS disk and you should see `OCOS 0.1.0` followed
    by the dock.

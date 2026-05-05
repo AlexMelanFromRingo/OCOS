@@ -8,6 +8,7 @@
 --   /tmp/ocos.lua 88895671                   -- explicit target by address prefix
 --   /tmp/ocos.lua 88895671 https://my.fork   -- target + custom base URL
 --   /tmp/ocos.lua --local /mnt/loot          -- read files from a local mount instead of HTTP
+--   /tmp/ocos.lua --flash-eeprom              -- (also) overwrite the EEPROM with OCOS BIOS
 
 local args = { ... }
 
@@ -22,7 +23,7 @@ local function ok(s)     io.write("[ok] " .. s .. "\n") end
 
 -- ---- arg parsing -------------------------------------------------------
 
-local target_prefix, base_url, local_root
+local target_prefix, base_url, local_root, flash_eeprom
 do
   local i = 1
   while i <= #args do
@@ -31,6 +32,9 @@ do
       local_root = args[i + 1]
       if not local_root then eprint("--local needs a path"); return 2 end
       i = i + 2
+    elseif a == "--flash-eeprom" then
+      flash_eeprom = true
+      i = i + 1
     elseif a:match("^https?://") then
       base_url = a
       i = i + 1
@@ -244,6 +248,40 @@ end
 if computer.setBootAddress then
   computer.setBootAddress(target_addr)
   ok("set boot address to " .. target_addr:sub(1, 8))
+end
+
+-- Optional EEPROM flash. We pull the minified BIOS source (whose path the
+-- builder placed in mfst.bios) and overwrite the EEPROM with it. Skipped
+-- unless --flash-eeprom was passed because flashing is one-way without a
+-- spare EEPROM to restore the stock BIOS from.
+if flash_eeprom and mfst.bios then
+  local eeprom_addr = component.list("eeprom")()
+  if not eeprom_addr then
+    eprint("install: --flash-eeprom but no EEPROM component present")
+  else
+    local bios_src
+    if local_root then
+      local fs = require("filesystem")
+      local h, herr = fs.open(local_root .. "/" .. mfst.bios, "r")
+      if not h then eprint("install: cannot read " .. mfst.bios .. ": " .. tostring(herr))
+      else
+        local parts = {}
+        while true do local d = h:read(4096); if not d or d == "" then break end; parts[#parts + 1] = d end
+        h:close(); bios_src = table.concat(parts)
+      end
+    else
+      bios_src = fetch_http(base_url .. "/" .. mfst.bios)
+    end
+    if bios_src then
+      local sok, serr = pcall(invoke, eeprom_addr, "set", bios_src)
+      if not sok then eprint("install: eeprom.set: " .. tostring(serr))
+      else
+        pcall(invoke, eeprom_addr, "setLabel", "OCOS BIOS")
+        pcall(invoke, eeprom_addr, "setData", target_addr)
+        ok("flashed EEPROM (" .. #bios_src .. " B)")
+      end
+    end
+  end
 end
 
 ok(string.format("wrote %d files. Reboot to start OCOS.", total))

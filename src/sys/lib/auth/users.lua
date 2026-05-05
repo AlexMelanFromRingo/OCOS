@@ -146,7 +146,10 @@ function M.remove(name)
 end
 
 function M.empty()
-  return next(load_db()) == nil
+  -- load_db returns (table, path); the parens collapse the multi-return so
+  -- next() does not get `path` as a second argument and complain about it
+  -- as an "invalid key".
+  return next((load_db())) == nil
 end
 
 return M

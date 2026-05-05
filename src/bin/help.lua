@@ -6,10 +6,12 @@ local sections = {
   },
   { "Filesystem",
     { "ls [path]", "cat [file...]", "head -n <n> [file]", "tail -n <n> [file]",
-      "grep <pattern> [file...]", "wc [file...]", "find <path>", "mounts" }
+      "grep <pattern> [file...]", "wc [file...]", "find <path>", "mounts",
+      "mkdir [-p] <path>", "rm [-rf] <path>", "cp [-r] <src...> <dst>",
+      "mv <src...> <dst>", "touch <path...>" }
   },
   { "System",
-    { "ps", "dmesg", "uname [-a]", "uptime", "free", "clear",
+    { "ps", "kill [-9] <pid>", "dmesg", "uname [-a]", "uptime", "free", "clear",
       "reboot", "shutdown", "sleep <sec>" }
   },
   { "Services",
@@ -24,7 +26,7 @@ local sections = {
       "pkg uninstall <id>", "pkg verify <id>" }
   },
   { "Developer",
-    { "repl", "profile <script>" }
+    { "repl", "lua [file [args]]", "profile <script>" }
   },
   { "Pipes / redirects",
     { "cmd1 | cmd2", "cmd > file", "cmd >> file", "cmd < file", "cmd 2> file",

@@ -48,6 +48,7 @@ local function load_unit(path)
   end
   t.restart   = t.restart   or DEFAULT_RESTART
   t.after     = t.after     or {}
+  t.conflicts = t.conflicts or {}
   t.caps      = t.caps      or {}
   t.args      = t.args      or {}
   t.env       = t.env       or {}
@@ -139,6 +140,17 @@ function M.start(id)
     if services[dep] and services[dep].state ~= "running" then
       local ok, err = M.start(dep)
       if not ok then return nil, "dep " .. dep .. " failed: " .. tostring(err) end
+    end
+  end
+  -- Resolve conflicts: any declared peer that's currently running gets a
+  -- cooperative stop request first. The ipc-based suspend protocol that
+  -- sessiond/uid use is finer-grained, but for any other pair this is the
+  -- safety net the manager owns.
+  for _, peer in ipairs(svc.unit.conflicts) do
+    local other = services[peer]
+    if other and other.state == "running" then
+      local ok, err = M.stop(peer)
+      if not ok then return nil, "conflict with " .. peer .. ": " .. tostring(err) end
     end
   end
   return spawn_service(id)
