@@ -169,10 +169,29 @@ local function selftest_run()
       children = { label({ text = "ab" }), label({ text = "cd" }), label({ text = "ef" }) },
     })
     row:layout(1, 1, 20, 1)
-    -- Verify children moved right with gaps.
     assert(row.children[1].bounds.x == 1)
     assert(row.children[2].bounds.x == 4, "second child x: " .. row.children[2].bounds.x)
     assert(row.children[3].bounds.x == 7, "third child x: "  .. row.children[3].bounds.x)
+  end)
+
+  check("apps load cleanly", function()
+    local Buffer = require("lib.ui.buffer")
+    local stub_buf = Buffer.new(80, 24)
+    local stub_compositor = {
+      theme       = require("lib.ui.theme").current(),
+      add         = function(_, w) w:layout(1, 1, 80, 24); return w end,
+      invalidate  = function() end,
+      size        = function() return 80, 24 end,
+      set_theme   = function() end,
+    }
+    for _, app in ipairs({ "desktop", "files", "dmesg", "inspect", "settings" }) do
+      local path = "/apps/" .. app .. ".app/Main.lua"
+      local src = vfs.read_all(path); assert(src, "cannot read " .. path)
+      local fn, lerr = load(src, "=" .. path, "t", _G)
+      assert(fn, app .. " load: " .. tostring(lerr))
+      local ok, rerr = pcall(fn, {}, {}, { compositor = stub_compositor })
+      assert(ok, app .. " run: " .. tostring(rerr))
+    end
   end)
 
   check("pkg install + verify + uninstall", function()
