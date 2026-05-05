@@ -44,7 +44,6 @@ return {
     { path = '/bin/userdel.lua', size = 430, sha256 = '020118f1403fd31fa62d3ed87494eb61cc6b50a05ebb09f8de9cd27dd30c817d' },
     { path = '/bin/wc.lua', size = 1218, sha256 = '086f90523ddb711cc5bad1fce43a3fab030d71ff42c1dc7dd47acfa6e0696ba6' },
     { path = '/bin/whoami.lua', size = 98, sha256 = 'f33518520ed56a95ae4f54924d52bb117d286b3cde084d9be7cb2f654def556b' },
-    { path = '/etc/boot.selftest', size = 15, sha256 = 'd899ffcc814558fcecbe57fae4c2f345277a2afe0fc02cfa1153987cf4008ea3' },
     { path = '/etc/locale/de.lua', size = 1177, sha256 = 'fc15c9ba1d3e0ac704d40ae80ab3bd8515b1155c643d5250ac3f74d536f9504a' },
     { path = '/etc/locale/en.lua', size = 1181, sha256 = '7dd912bb111bd1e4fa2f9b25f9fd78b6fade462df5f45bd72244e579f96f383f' },
     { path = '/etc/locale/ru.lua', size = 1467, sha256 = 'a2973ee8f542b510bf31096f279b5725876da32d462499d6b0a997dae254e552' },
@@ -130,5 +129,8 @@ return {
     { path = '/sys/svc/logd.lua', size = 2315, sha256 = '0bec2d576606f4282eb8d82d40310019de5b79fc39827d7451ef87191d943739' },
     { path = '/sys/svc/sessiond.lua', size = 3229, sha256 = 'd361f48a0d4d3f5bfc5abb0f21bc8fc83683b9e4140ad19f5a5c0e910e95fb46' },
     { path = '/sys/svc/uid.lua', size = 1874, sha256 = '5b602d178d83cdfbf643af80f475153ce5a90abb5e31eb093b6b815f5920dfa7' },
+  },
+  cleanup = {
+    '/etc/boot.selftest',
   },
 }

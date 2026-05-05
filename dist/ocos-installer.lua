@@ -228,6 +228,19 @@ if failed > 0 then
   return 1
 end
 
+-- Strip stale dev-only files left by previous installer revisions. An
+-- earlier build of the manifest accidentally shipped /etc/boot.selftest
+-- which puts the kernel into self-test-then-shutdown mode at boot. The
+-- cleanup array gives us an explicit removal pass for paths like that.
+if mfst.cleanup then
+  for _, p in ipairs(mfst.cleanup) do
+    if invoke(target_addr, "exists", p) then
+      pcall(invoke, target_addr, "remove", p)
+      ok("removed stale " .. p)
+    end
+  end
+end
+
 if computer.setBootAddress then
   computer.setBootAddress(target_addr)
   ok("set boot address to " .. target_addr:sub(1, 8))

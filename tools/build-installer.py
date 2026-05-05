@@ -258,6 +258,19 @@ if failed > 0 then
   return 1
 end
 
+-- Strip stale dev-only files left by previous installer revisions. An
+-- earlier build of the manifest accidentally shipped /etc/boot.selftest
+-- which puts the kernel into self-test-then-shutdown mode at boot. The
+-- cleanup array gives us an explicit removal pass for paths like that.
+if mfst.cleanup then
+  for _, p in ipairs(mfst.cleanup) do
+    if invoke(target_addr, "exists", p) then
+      pcall(invoke, target_addr, "remove", p)
+      ok("removed stale " .. p)
+    end
+  end
+end
+
 if computer.setBootAddress then
   computer.setBootAddress(target_addr)
   ok("set boot address to " .. target_addr:sub(1, 8))
@@ -268,12 +281,24 @@ return 0
 """
 
 
+# Files that exist in src/ purely so the dev-loop tools (ocvm test-boot)
+# can trigger development-only behaviour. They must NOT land on a real
+# user's installed disk because they change kernel behaviour. Listed in
+# the installer's `cleanup` array so an upgrade strips stale copies left
+# by older builds.
+DEV_ONLY = {
+    "/etc/boot.selftest",            # presence triggers init-time self-test + shutdown
+}
+
+
 def collect(root: Path) -> list[dict]:
     out = []
     for path in sorted(root.rglob("*")):
         if not path.is_file():
             continue
         rel = "/" + str(path.relative_to(root)).replace("\\", "/")
+        if rel in DEV_ONLY:
+            continue
         data = path.read_bytes()
         out.append({
             "path": rel,
@@ -289,6 +314,10 @@ def render_manifest(files: list[dict]) -> str:
         lines.append(
             f'    {{ path = {f["path"]!r}, size = {f["size"]}, sha256 = {f["sha256"]!r} }},'
         )
+    lines.append("  },")
+    lines.append("  cleanup = {")
+    for path in sorted(DEV_ONLY):
+        lines.append(f"    {path!r},")
     lines.append("  },")
     lines.append("}")
     return "\n".join(lines) + "\n"
