@@ -76,6 +76,8 @@ _require("drv.gpu").init()
 _require("drv.screen").init()
 _require("drv.kbd").init()
 _require("drv.fs").init()
+_require("drv.modem").init()
+_require("drv.internet").init()
 
 -- ---- Replay component_added so drivers discover already-attached hw -----
 

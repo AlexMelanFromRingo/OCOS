@@ -5,17 +5,20 @@
 -- user's capabilities; otherwise drops straight into a privileged root
 -- shell suitable for first-boot configuration.
 --
--- Cooperates with the GUI session manager (uid) through ipc:
---   * publishes  ses.tty.released   when suspending (uid is taking over)
---   * publishes  ses.tty.acquired   when resuming
---   * subscribes svc.suspend.sessiond / svc.resume.sessiond
---   * subscribes svc.stop.sessiond  (cooperative shutdown)
+-- VT switching with the GUI service (uid) goes through ipc:
+--   svc.suspend.sessiond   pause the shell child (parked, retains state)
+--   svc.resume.sessiond    unpause and trigger a prompt redraw
+--
+-- The sessiond coroutine itself stays in wait_pid throughout — pausing
+-- happens at the proc level so the shell's open file handles, history,
+-- env and command line survive the GUI session intact.
 
 local sched   = require("k.sched")
 local log     = require("k.log")
 local vfs     = require("k.vfs")
 local exec    = require("k.exec")
 local ipc     = require("k.ipc")
+local proc    = require("k.proc")
 local console = require("lib.term.console")
 local tty     = require("lib.term.tty")
 local users   = require("lib.auth.users")
@@ -32,7 +35,6 @@ local function print_motd(streams)
   h:close()
 end
 
--- Read a password from the keyboard without echoing the characters.
 local function read_password()
   local buf = {}
   while true do
@@ -66,40 +68,30 @@ local function login()
 end
 
 local stopping  = false
-local suspended = false
 local active_sh                                    -- pid of the shell we spawned
 
-local function tear_down_shell()
-  if active_sh then
-    local proc = require("k.proc")
-    pcall(proc.kill, active_sh, "kill")
-    active_sh = nil
-  end
-end
-
 ipc.subscribe("svc.stop.sessiond", function()
-  stopping = true; tear_down_shell(); computer.pushSignal("__sessiond_wake")
+  stopping = true
+  if active_sh then pcall(proc.kill, active_sh, "kill") end
+  computer.pushSignal("__sessiond_wake")
 end)
+
 ipc.subscribe("svc.suspend.sessiond", function()
-  suspended = true; tear_down_shell(); computer.pushSignal("__sessiond_wake")
+  if active_sh then pcall(proc.pause, active_sh) end
+  ipc.publish("ses.tty.released", {})
 end)
+
 ipc.subscribe("svc.resume.sessiond", function()
-  suspended = false; computer.pushSignal("__sessiond_wake")
+  if active_sh then pcall(proc.resume, active_sh) end
+  ipc.publish("ses.tty.acquired", {})
+  -- Ask whatever console.read_line is currently parked in the shell to
+  -- repaint its prompt; the GUI cleared the screen on its way out.
+  ipc.publish("console.redraw", {})
 end)
 
 console.init()
 
 while not stopping do
-  if suspended then
-    ipc.publish("ses.tty.released", {})
-    while suspended and not stopping do
-      sched.wait(function(name) return name == "__sessiond_wake" end, 1)
-    end
-    if stopping then break end
-    console.init()
-    ipc.publish("ses.tty.acquired", {})
-  end
-
   console.set_fg(0xCCCCFF); console.writeln(_OSVERSION)
   console.set_fg(0xCCCCCC)
   local streams = { stdin = tty.stdin(), stdout = tty.stdout(), stderr = tty.stderr() }
@@ -129,7 +121,7 @@ while not stopping do
     sched.wait_pid(sh.id)
     active_sh = nil
     audit.write({ kind = "logout", user = name })
-    if not stopping and not suspended then
+    if not stopping then
       console.writeln("[shell exited]")
       sched.sleep(0.2)
     end

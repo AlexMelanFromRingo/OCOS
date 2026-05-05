@@ -13,15 +13,17 @@ local sched   = require("k.sched")
 
 local function make_stdout(color)
   local original
-  return stream.new {
-    _write = function(self, s)
+  local s = stream.new {
+    _write = function(self, str)
       if color then original = console.fg(); console.set_fg(color) end
-      console.write(s)
+      console.write(str)
       if color then console.set_fg(original) end
       return self
     end,
     _flush = function(self) return self end,
   }
+  s._isatty = true                                -- read by ls --color=auto et al.
+  return s
 end
 
 local _stdin

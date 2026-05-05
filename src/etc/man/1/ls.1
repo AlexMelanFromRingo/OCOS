@@ -1,0 +1,21 @@
+ls — list directory contents
+
+SYNOPSIS
+  ls [-l] [-a] [PATH...]
+
+DESCRIPTION
+  Lists names of entries in PATH. With no arguments, lists the current
+  working directory. Paths in OCOS are absolute (starting with `/`) or
+  resolved relative to PWD.
+
+OPTIONS
+  -l   long format: size, last-modified, type
+  -a   include dotfiles
+
+EXAMPLES
+  ls /              entries in the root
+  ls -l /etc        long listing of system config
+  ls -a /home/root  include dotfiles in root's home
+
+SEE ALSO
+  cat(1), find(1), mounts(1)

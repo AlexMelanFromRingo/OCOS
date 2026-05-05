@@ -1,0 +1,29 @@
+pkg — package manager
+
+SYNOPSIS
+  pkg list
+  pkg info ID
+  pkg install [-f] (DIR | ID)
+  pkg uninstall ID
+  pkg verify ID
+
+DESCRIPTION
+  Manages OCOS packages. A package is a directory tree with
+  manifest.cfg declaring id / version / depends / caps_required and a
+  files table with sha256 per file. Local installs (DIR) read from a
+  directory; remote installs (ID) resolve through the registries
+  configured in /etc/registries.cfg.
+
+  The local package database lives at /var/db/pkg/. install records
+  every file's expected sha256 there; verify re-hashes them later.
+  -f forces install over an existing version of the same id.
+
+EXAMPLES
+  pkg list                           installed packages
+  pkg install ./hello/               from a local directory
+  pkg install com.example.editor     from a configured registry
+  pkg verify com.example.editor      re-check the file hashes
+  pkg uninstall com.example.editor
+
+SEE ALSO
+  registries(5)

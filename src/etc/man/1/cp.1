@@ -1,0 +1,23 @@
+cp — copy files and directory trees
+
+SYNOPSIS
+  cp [-r] SRC... DST
+
+DESCRIPTION
+  Copies each SRC to DST. If DST is a directory, every SRC is copied
+  inside it; otherwise exactly one SRC is required and its content is
+  copied to DST.
+
+  -r enables directory recursion. Without it, copying a directory is
+  a hard error.
+
+  Copies always read-then-write; OC's filesystem component has no clone
+  primitive. Cross-mount copies work the same as same-mount copies — the
+  payload simply transits through Lua memory.
+
+EXAMPLES
+  cp data.txt /backup/
+  cp -r /home/alex /mnt/external/alex
+
+SEE ALSO
+  mv(1), rm(1), ls(1)

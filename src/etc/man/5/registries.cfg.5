@@ -1,0 +1,35 @@
+registries.cfg — package registry configuration
+
+LOCATION
+  /etc/registries.cfg
+
+FORMAT
+  return {
+    {
+      name        = "<short id>",
+      url         = "https://<host>/<path>",
+      trusted_keys = { "<ed25519-pub-hex>", ... },
+    },
+    ...
+  }
+
+DESCRIPTION
+  pkg(1) consults this list when resolving a package id. Multiple
+  entries are queried in order; the first registry that knows the id
+  wins. Each registry hosts an index.cfg listing available packages
+  and one manifest.cfg + payload.tar per package.
+
+  trusted_keys are Ed25519 public keys whose signatures over a
+  manifest are accepted as authentic. Unsigned packages are only
+  installable when no key is configured for the originating
+  registry.
+
+EXAMPLES
+  return {
+    { name = "official", url = "https://ocos.example.org/pkg",
+      trusted_keys = { "abcd…" } },
+    { name = "local",    url = "http://10.0.0.5:8080" },
+  }
+
+SEE ALSO
+  pkg(1)

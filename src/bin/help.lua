@@ -1,4 +1,18 @@
--- /bin/help.lua — print a short reference of available commands.
+-- /bin/help.lua — short reference of available commands.
+-- By default paginates if the output would not fit on one screen.
+-- Pass --plain (or -p) to disable pagination, e.g. `help --plain | grep ls`.
+
+local args, _ = ...
+local pager = require("lib.devtools.pager")
+
+local plain = false
+local filter
+for i = 1, #args do
+  local a = args[i]
+  if a == "--plain" or a == "-p" then plain = true
+  elseif a:sub(1, 1) ~= "-" then filter = a end
+end
+
 local sections = {
   { "Built-ins (run inside the shell)",
     { "cd <path>", "pwd", "exit [code]", "set [k=v]", "unset <k>",
@@ -25,6 +39,9 @@ local sections = {
     { "pkg list", "pkg info <id>", "pkg install [-f] <dir|id>",
       "pkg uninstall <id>", "pkg verify <id>" }
   },
+  { "Documentation",
+    { "help [--plain]", "man <name>", "less [file]", "more [file]" }
+  },
   { "Developer",
     { "repl", "lua [file [args]]", "profile <script>" }
   },
@@ -33,9 +50,19 @@ local sections = {
       "cmd1 && cmd2", "cmd1 || cmd2", "cmd1 ; cmd2" }
   },
 }
+
+local lines = {}
 for _, s in ipairs(sections) do
-  print(s[1])
-  for _, c in ipairs(s[2]) do print("  " .. c) end
-  print("")
+  if not filter or s[1]:lower():find(filter:lower(), 1, true) then
+    lines[#lines + 1] = s[1]
+    for _, c in ipairs(s[2]) do lines[#lines + 1] = "  " .. c end
+    lines[#lines + 1] = ""
+  end
 end
-return 0
+local text = table.concat(lines, "\n")
+
+if plain then
+  io.write(text)
+  return 0
+end
+return pager.show(text, { title = "OCOS help" })

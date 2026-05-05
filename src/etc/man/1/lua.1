@@ -1,0 +1,29 @@
+lua — Lua interpreter / REPL
+
+SYNOPSIS
+  lua                              REPL
+  lua FILE [arg...]                run FILE
+  lua -e 'chunk' [arg...]          evaluate a chunk
+
+DESCRIPTION
+  Without arguments, opens an interactive REPL with multi-line input
+  support: a chunk that ends mid-expression triggers a continuation
+  prompt. Each line is first compiled as `return EXPR` (so `1+2` prints
+  `3`); if that fails it is recompiled as a statement.
+
+  With FILE, loads and runs the script. arg[0] is FILE, arg[1..] are
+  the trailing command-line arguments. The script returns either a
+  number (used as the exit code) or nothing (exit 0).
+
+  -e evaluates the next argument as Lua source.
+
+  Both modes share a sandbox provided by lib/devtools/repl.lua so
+  globals set in one REPL line stay visible in later ones.
+
+EXAMPLES
+  lua                                    enter REPL
+  lua /home/test.lua a b                 run with arg = {[0]=path, [1]="a", [2]="b"}
+  lua -e 'print(_VERSION)'
+
+SEE ALSO
+  repl(1)

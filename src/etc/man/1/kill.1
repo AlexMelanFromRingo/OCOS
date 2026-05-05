@@ -1,0 +1,25 @@
+kill — send a signal to a process
+
+SYNOPSIS
+  kill [-9 | -KILL | -TERM] PID...
+
+DESCRIPTION
+  Default sends SIGTERM, a cooperative shutdown request. Targets that
+  subscribe to ipc "proc.term" can clean up; targets sleeping in
+  sched.wait are woken via the synthetic "__sigterm__<pid>" signal.
+
+  -9 (SIGKILL) is destructive: the proc record is disposed immediately
+  and proc.exit is published with code = -9. The Lua coroutine is left
+  for the GC to reap (Lua has no coroutine.throw).
+
+  Both signal forms require the syscall:kill capability when cap
+  enforcement is on. With enforce=false the audit log records the
+  intent but the kill proceeds.
+
+EXAMPLES
+  ps                  list running processes
+  kill 7              ask pid 7 to terminate
+  kill -9 12          force-kill pid 12
+
+SEE ALSO
+  ps(1), svc(1)

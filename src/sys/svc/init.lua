@@ -26,8 +26,15 @@ local function selftest_run()
   local results = { _OSVERSION, "uptime=" .. tostring(computer.uptime()) }
   local function check(name, fn)
     local ok, err = pcall(fn)
-    results[#results + 1] = (ok and "PASS " or "FAIL ") .. name ..
-      (ok and "" or "  -- " .. tostring(err))
+    if not ok and type(err) == "string" and err:find("^skip:") then
+      results[#results + 1] = "SKIP " .. name .. "  -- " .. err:sub(6)
+    else
+      results[#results + 1] = (ok and "PASS " or "FAIL ") .. name ..
+        (ok and "" or "  -- " .. tostring(err))
+    end
+  end
+  local function skip_if(cond, reason)
+    if cond then error("skip:" .. (reason or ""), 0) end
   end
 
   check("vfs.list /sys",  function() assert(#vfs.list("/sys") > 0) end)
@@ -111,6 +118,56 @@ local function selftest_run()
     proc.kill(victim.id, "kill")
     sched.sleep(0.05)
     assert(not proc.get(victim.id), "victim still in proc table after SIGKILL")
+  end)
+
+  check("modem self-broadcast", function()
+    skip_if(not component.list("modem")(), "no modem")
+    local modem = require("drv.modem")
+    modem.init()
+    local PORT = 49001
+    modem.open(PORT)
+    local got
+    local handle = ipc.subscribe("net.message", function(msg)
+      if msg.port == PORT then got = msg end
+    end)
+    modem.broadcast(PORT, "ocos-net-test", 7)
+    local deadline = computer.uptime() + 2
+    while not got and computer.uptime() < deadline do sched.sleep(0.05) end
+    ipc.unsubscribe(handle); modem.close(PORT)
+    assert(got, "did not receive own broadcast within 2s")
+    assert(got.payload[1] == "ocos-net-test", "payload mismatch: " .. tostring(got.payload[1]))
+    assert(got.payload[2] == 7, "payload[2] mismatch: " .. tostring(got.payload[2]))
+  end)
+
+  check("internet HTTP GET", function()
+    local net = require("drv.internet")
+    skip_if(not net.has_internet(), "no internet card")
+    -- IANA-controlled stable endpoint. OC's internet card handles HTTPS
+    -- via JVM, so we prefer https:// to avoid HTTP→HTTPS redirects.
+    local body, status = net.http_request("https://example.com/", { timeout = 10 })
+    assert(body, "request failed: " .. tostring(status))
+    assert(body:lower():find("example", 1, true), "body did not mention example")
+  end)
+
+  check("uid service stays running", function()
+    -- The user-reported "console restarts when I run svc start uid" failure
+    -- mode means uid exits before the user can see the desktop. We start
+    -- uid as a service and verify it's still "running" 0.5 s later —
+    -- not "finished" or "failed". Skip when the GPU has no real screen
+    -- (ocvm without a real PTY reports 0×0 and compositor.new will refuse).
+    local gpu = require("drv.gpu")
+    local gw, gh = gpu.size()
+    skip_if(not gw or gw <= 0 or not gh or gh <= 0, "headless gpu (0x0)")
+    svcmgr.load_units("/etc/services")
+    local svc = svcmgr.start("uid")
+    if not svc then error("could not start uid") end
+    sched.sleep(0.5)
+    local s = svcmgr.status("uid")
+    assert(s and s.state == "running",
+      "uid is " .. tostring(s and s.state) .. " (last_error=" ..
+      tostring(s and s.last_error) .. ")")
+    pcall(svcmgr.stop, "uid")
+    sched.sleep(0.2)
   end)
 
   check("sessiond suspend/resume", function()

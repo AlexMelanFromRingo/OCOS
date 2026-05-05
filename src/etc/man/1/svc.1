@@ -1,0 +1,30 @@
+svc — query and control system services
+
+SYNOPSIS
+  svc list
+  svc status ID
+  svc start ID
+  svc stop ID
+
+DESCRIPTION
+  Inspects and controls services managed by /sys/svc/init. Services
+  are declared by unit files in /etc/services/<id>.cfg and supervised
+  with restart-on-failure semantics.
+
+  list      summarises every loaded service
+  status    prints the unit + runtime fields for ID
+  start     starts ID (and any unsatisfied dependencies)
+  stop      asks ID to exit cooperatively (5 s grace)
+
+EXAMPLES
+  svc list
+  svc start uid                  start the GUI session
+
+CONFLICTS
+  Some services declare conflicts={} in their unit and the manager
+  will stop the named peers before starting. Sessiond and uid use a
+  finer ipc-level pause/resume rather than conflicts because they
+  share the same screen.
+
+SEE ALSO
+  ps(1), kill(1), services(5)

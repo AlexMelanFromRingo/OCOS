@@ -1,0 +1,19 @@
+mv — move/rename files and directories
+
+SYNOPSIS
+  mv SRC... DST
+
+DESCRIPTION
+  Renames SRC to DST when both live on the same OC filesystem
+  (vfs.rename, an O(1) directory-entry swap). When SRC and DST sit on
+  different mounts, mv falls back to a full copy followed by removal of
+  the source — slower, but the result is identical.
+
+  As with cp, if DST is a directory each SRC is moved into it.
+
+EXAMPLES
+  mv old.txt new.txt
+  mv * /home/archive/
+
+SEE ALSO
+  cp(1), rm(1)

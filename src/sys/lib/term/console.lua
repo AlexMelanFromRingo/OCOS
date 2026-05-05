@@ -29,6 +29,7 @@
 local M = {}
 
 local sched   = require("k.sched")
+local ipc     = require("k.ipc")
 local gpu     = require("drv.gpu")
 local keymap  = require("lib.term.keymap")
 
@@ -118,7 +119,7 @@ local function history_list(h)
 end
 
 local function key_filter(name)
-  return name == "key_down" or name == "clipboard"
+  return name == "key_down" or name == "clipboard" or name == "__console_redraw"
 end
 
 -- Draws a one-cell inverse caret at (x, y) on top of `under_char`. Returns
@@ -198,8 +199,13 @@ function M.read_line(prompt, opts)
     cur = #buf
   end
 
-  local function finish(line)
+  local redraw_handle
+  local function cleanup()
+    if redraw_handle then ipc.unsubscribe(redraw_handle); redraw_handle = nil end
     if clear_caret then clear_caret(); clear_caret = nil end
+  end
+  local function finish(line)
+    cleanup()
     M.set_cursor(prompt_len + 1 + #buf, sy)
     M.write("\n")
     if line and line ~= "" then history_record(hist, line) end
@@ -208,9 +214,18 @@ function M.read_line(prompt, opts)
 
   repaint()
 
+  -- Listen for "console.redraw" IPC requests so a VT switch back from the
+  -- GUI session can put the prompt back without the user having to press
+  -- a key. The handler bridges into a raw signal we filter on.
+  redraw_handle = ipc.subscribe("console.redraw", function()
+    computer.pushSignal("__console_redraw")
+  end)
+
   while true do
     local ev = sched.wait(key_filter)
-    if ev and ev.name == "key_down" then
+    if ev and ev.name == "__console_redraw" then
+      M.clear(); M.write(prompt); sy = ({M.cursor()})[2]; clear_caret = nil; repaint()
+    elseif ev and ev.name == "key_down" then
       local _, char, code = ev.args[1], ev.args[2], ev.args[3]
       local action = keymap.action(code, char)
       if action == "enter" then
@@ -290,13 +305,13 @@ function M.read_line(prompt, opts)
           buf, cur = {}, 0; hist_pos = nil
           repaint()
         else
-          if clear_caret then clear_caret(); clear_caret = nil end
+          cleanup()
           M.write("\n")
           return nil
         end
       elseif action == "eof" then
         if #buf == 0 then
-          if clear_caret then clear_caret(); clear_caret = nil end
+          cleanup()
           M.write("\n"); return nil
         end
       elseif char and char >= 32 and char < 127 then

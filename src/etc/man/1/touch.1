@@ -1,0 +1,20 @@
+touch — create empty files
+
+SYNOPSIS
+  touch FILE...
+
+DESCRIPTION
+  For each missing FILE, creates an empty file at that path. For files
+  that already exist, touch is a no-op: OC's managed filesystem does
+  not expose a way to update lastModified from Lua, so the POSIX
+  "bump mtime" behaviour is not available here.
+
+  Use the file's existence as the signal touch is meant to provide
+  (e.g., for marker files like /etc/boot.selftest).
+
+EXAMPLES
+  touch /var/lib/marker         create the marker file
+  touch a b c                   create three at once
+
+SEE ALSO
+  mkdir(1), rm(1)

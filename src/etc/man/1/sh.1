@@ -1,0 +1,48 @@
+sh — OCOS shell
+
+SYNOPSIS
+  sh [-c "SCRIPT"]
+  sh
+
+DESCRIPTION
+  Interactive shell with pipes, redirects, control flow and POSIX-style
+  quoting.
+
+  Pipes / redirects / control flow:
+    cmd1 | cmd2          stdout of cmd1 → stdin of cmd2
+    cmd > file           write stdout to file (truncate)
+    cmd >> file          append stdout to file
+    cmd < file           read stdin from file
+    cmd 2> file          redirect stderr
+    cmd1 && cmd2         run cmd2 only if cmd1 succeeded
+    cmd1 || cmd2         run cmd2 only if cmd1 failed
+    cmd1 ; cmd2          run sequentially regardless
+
+  Variables: $VAR, ${VAR}, $? (last status). Set with `set K=V`.
+
+  Tab completion: first word completes against $PATH + builtins;
+  subsequent words complete file/directory paths under PWD.
+
+  History: stored at $HOME/.sh_history, persistent across reboots.
+
+  Editor key bindings:
+    Ctrl-A / Home       jump to start of line
+    Ctrl-E / End        jump to end of line
+    Ctrl-W              delete previous word
+    Ctrl-U              clear the line
+    Ctrl-K              kill to end of line
+    Ctrl-L              redraw the prompt
+    Ctrl-C              abort the current line (does not exit)
+    Ctrl-D              EOF on an empty line
+
+  Builtins: cd, pwd, exit, set, unset, alias, unalias, echo, true,
+  false, exec, export. Everything else is resolved through $PATH
+  (default /bin) using either /bin/<name>.lua or /bin/<name>.
+
+EXAMPLES
+  echo hi | grep h
+  ls /etc | wc -l
+  if=$(cat /etc/hostname); echo "host=$if"
+
+SEE ALSO
+  lua(1), help(1)

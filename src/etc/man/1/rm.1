@@ -1,0 +1,20 @@
+rm — remove files and directories
+
+SYNOPSIS
+  rm [-r] [-f] PATH...
+
+DESCRIPTION
+  Removes each PATH. Refuses to remove "/" outright. With -r (recursive)
+  walks into directories before removing them; with -f (force) missing
+  operands are ignored and write errors do not change the exit status.
+
+  OCOS's vfs has no atomic rmdir-on-empty: -r reads each directory,
+  removes children one by one, and only then removes the directory.
+
+EXAMPLES
+  rm tmpfile
+  rm -r build/
+  rm -rf /tmp/work               idempotent cleanup
+
+SEE ALSO
+  mkdir(1), cp(1), mv(1), find(1)

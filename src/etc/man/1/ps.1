@@ -1,0 +1,16 @@
+ps — list running processes
+
+SYNOPSIS
+  ps
+
+DESCRIPTION
+  Prints every entry in the kernel process table: pid, status
+  (ready / running / sleeping / waiting / paused / dead), name, and
+  the command line the process was invoked with.
+
+  OCOS uses cooperative scheduling — there are no kernel threads —
+  so "running" only ever applies to the single process the scheduler
+  is currently servicing.
+
+SEE ALSO
+  kill(1), svc(1), inspect(1)

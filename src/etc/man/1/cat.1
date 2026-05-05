@@ -1,0 +1,15 @@
+cat — concatenate files to standard output
+
+SYNOPSIS
+  cat [FILE...]
+
+DESCRIPTION
+  Reads each FILE in order and writes the contents to stdout. Without
+  arguments, reads from stdin. Paths are resolved through k.vfs, so you
+  can read /proc/<pid>/* and /dev/<component>/* synthetic entries the
+  same way as regular files.
+
+EXAMPLES
+  cat /etc/motd                 the message-of-the-day
+  cat /var/log/dmesg.log | grep error
+  cat < input.txt               redirect stdin

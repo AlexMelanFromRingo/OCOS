@@ -1,0 +1,32 @@
+services — service unit files
+
+LOCATION
+  /etc/services/<id>.cfg
+
+FORMAT
+  return {
+    id          = "<short id>",
+    description = "<one-line description>",
+    exec        = "/sys/svc/<id>.lua",
+    args        = { ... },
+    after       = { "dep1", "dep2" },
+    conflicts   = { "peer1", ... },
+    caps        = { "*" },
+    restart     = "on_failure" | "always" | "one_shot",
+    autostart   = true | false,
+    env         = { K = "V" },
+  }
+
+DESCRIPTION
+  Read at boot by /sys/svc/init.lua and after that by /bin/svc on
+  demand. The supervisor topo-sorts by `after`, spawns each unit in
+  its own process, and restarts according to `restart`.
+
+  conflicts is the optional cooperative-stop list: starting this
+  service stops any peer in this list first.
+
+EXAMPLES
+  See /etc/services/{logd,sessiond,uid}.cfg in the source tree.
+
+SEE ALSO
+  svc(1)

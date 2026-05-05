@@ -72,6 +72,34 @@ function M.dispose(p)
   procs[p.id] = nil
 end
 
+-- M.pause(pid) / M.resume(pid)
+--
+-- Pause parks a process by flipping its status to "paused"; the scheduler's
+-- is_ready predicate returns false for that, so the coroutine is never
+-- resumed even when its filter would otherwise match an incoming event.
+-- The prior status is stashed on the proc so resume can restore it. We
+-- use this for VT switching: the shell coroutine sits in console.read_line
+-- waiting for key_down; pausing it stops it from consuming events while
+-- the GUI session is active. Resume restores the prior status; the next
+-- matching signal then resumes the coroutine normally.
+function M.pause(pid)
+  local p = procs[pid]
+  if not p then return nil, "no such process" end
+  if p.status == "paused" then return true end
+  p.kv.paused_from = p.status
+  p.status = "paused"
+  return true
+end
+
+function M.resume(pid)
+  local p = procs[pid]
+  if not p then return nil, "no such process" end
+  if p.status ~= "paused" then return true end
+  p.status = p.kv.paused_from or "ready"
+  p.kv.paused_from = nil
+  return true
+end
+
 -- M.kill(pid, sig)
 --
 --   sig = "term" (default): cooperative shutdown. Publishes ipc

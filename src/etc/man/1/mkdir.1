@@ -1,0 +1,20 @@
+mkdir — create directories
+
+SYNOPSIS
+  mkdir [-p] DIR...
+
+DESCRIPTION
+  Creates each named directory. With -p (parents) ancestor directories
+  are created as needed and existing targets do not raise an error.
+
+EXAMPLES
+  mkdir new                    one directory in PWD
+  mkdir -p /home/alex/cfg/x/y  full chain at once
+
+EXIT STATUS
+  0  all targets created (or already existed under -p)
+  1  at least one target failed
+  2  bad invocation
+
+SEE ALSO
+  rm(1), cp(1), mv(1), touch(1)
