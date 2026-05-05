@@ -73,10 +73,18 @@ function Compositor:render()
 end
 
 function Compositor:dispatch(ev)
-  -- Walk into root; let widgets claim the event. Always render afterwards
-  -- since event handlers commonly call :invalidate().
+  -- The window manager (when attached) gets a first crack at every
+  -- event so it can manage drag/resize and global shortcuts before
+  -- widgets see it.
+  if self.wm and self.wm:handle_global_event(ev) then
+    self:render(); return
+  end
   self.root:on_event(ev)
   self:render()
+end
+
+function Compositor:attach_wm(wm)
+  self.wm = wm
 end
 
 local TICK = "__ui_tick"

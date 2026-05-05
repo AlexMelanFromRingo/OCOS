@@ -2,11 +2,9 @@
 local _, _, session = ...
 local ui    = require("lib.ui")
 local proc  = require("k.proc")
-local ipc   = require("k.ipc")
 local sched = require("k.sched")
 
-if not (session and session.compositor) then return 1 end
-local compositor = session.compositor
+if not (session and session.compositor and session.wm) then return 1 end
 
 local function snapshot()
   local lines = { string.format("%-4s %-10s %-12s %s", "PID", "STATUS", "NAME", "CMDLINE") }
@@ -17,23 +15,11 @@ local function snapshot()
   return lines
 end
 
-local list = ui.widgets.list({
-  items = snapshot(),
-  width = 70,
-  height = 18,
-})
-local win = ui.widgets.window({
-  title = "Processes", w = 74, h = 22,
-  body = list,
-  on_close = function(self) self.visible = false; self:invalidate() end,
-})
-win:layout(5, 5, 74, 22)
-compositor:add(win)
-compositor:invalidate()
+local list = ui.widgets.list({ items = snapshot(), width = 70, height = 18 })
+local win  = session.wm:open{ title = "Processes", body = list, w = 72, h = 18 }
 
--- Refresh every second.
 sched.spawn(function()
-  while win.visible ~= false do
+  while win.visible do
     sched.sleep(1)
     list.props.items = snapshot()
     list:invalidate()

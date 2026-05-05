@@ -6,6 +6,7 @@ return {
   layout     = require("lib.ui.layout"),
   theme      = require("lib.ui.theme"),
   widget     = require("lib.ui.widget"),
+  wm         = require("lib.ui.wm"),
   widgets = {
     label    = require("lib.ui.widgets.label"),
     button   = require("lib.ui.widgets.button"),
@@ -14,5 +15,6 @@ return {
     checkbox = require("lib.ui.widgets.checkbox"),
     window   = require("lib.ui.widgets.window"),
     menu     = require("lib.ui.widgets.menu"),
+    taskbar  = require("lib.ui.widgets.taskbar"),
   },
 }

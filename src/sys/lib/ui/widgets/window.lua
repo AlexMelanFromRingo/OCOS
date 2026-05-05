@@ -1,11 +1,24 @@
--- /sys/lib/ui/widgets/window.lua — bordered, titled, draggable container.
+-- /sys/lib/ui/widgets/window.lua — bordered, titled window with chrome.
+--
+-- Title bar: "  <title>...                          _ ▣ ×"
+-- Body area: bounds.x+1..b.w-2, bounds.y+1..b.h-2  (one cell border).
+-- Bottom-right has a "↘" resize grip when resizable.
+--
+-- User input is forwarded to callbacks the WM supplies:
+--   on_close, on_min, on_max, on_focus, on_drag_start
+
 local widget = require("lib.ui.widget")
 
-local function ucs_len(s) local u = _G.unicode; return u and u.len and u.len(s) or #s end
+local function clamp_title(t, w)
+  t = t or ""
+  if #t <= w then return t end
+  if w <= 1 then return "…" end
+  return t:sub(1, w - 1) .. "…"
+end
 
 return function(props)
-  local w = widget.new("window", {
-    state = { dragging = false, drag_dx = 0, drag_dy = 0 },
+  local W = widget.new("window", {
+    state = { focused = false },
 
     measure = function(self, max_w, max_h)
       local cw, ch = max_w, max_h
@@ -17,7 +30,7 @@ return function(props)
     _layout_children = function(self)
       local b = self.bounds
       if self.children[1] then
-        self.children[1]:layout(b.x + 1, b.y + 2, b.w - 2, b.h - 3)
+        self.children[1]:layout(b.x + 1, b.y + 1, b.w - 2, b.h - 2)
       end
     end,
 
@@ -26,47 +39,103 @@ return function(props)
       local t = theme.window or {}
       local bg = t.bg or theme.palette.surface
       local fg = t.fg or theme.palette.fg
+      local title_fg = t.title_fg or 0xFFFFFF
+      local title_bg = self.state.focused
+        and (t.title_bg or theme.palette.accent)
+        or  (t.title_bg_unfocused or theme.palette.muted or 0x444444)
+      local border = self.state.focused
+        and (theme.palette.accent or 0x4FA0F0)
+        or  (theme.palette.muted  or 0x666666)
+
       buffer:fill(b.x, b.y, b.w, b.h, " ", fg, bg)
-      buffer:fill(b.x, b.y, b.w, 1, " ", t.title_fg or 0xFFFFFF, t.title_bg or theme.palette.accent)
-      local title = self.props.title or ""
-      local n = math.min(ucs_len(title), b.w - 4)
-      for i = 1, n do buffer:set(b.x + 1 + i, b.y, title:sub(i, i), t.title_fg or 0xFFFFFF, t.title_bg or theme.palette.accent) end
-      if self.props.closable ~= false then
-        buffer:set(b.x + b.w - 2, b.y, "x", t.title_fg or 0xFFFFFF, t.title_bg or theme.palette.accent)
+      for x = b.x + 1, b.x + b.w - 2 do
+        buffer:set(x, b.y + b.h - 1, "─", border, bg)
       end
-      for _, c in ipairs(self.children) do if c.visible then c:draw(buffer, theme) end end
+      for y = b.y + 1, b.y + b.h - 1 do
+        buffer:set(b.x,           y, "│", border, bg)
+        buffer:set(b.x + b.w - 1, y, "│", border, bg)
+      end
+      buffer:set(b.x,           b.y + b.h - 1, "└", border, bg)
+      buffer:set(b.x + b.w - 1, b.y + b.h - 1, "┘", border, bg)
+
+      buffer:fill(b.x, b.y, b.w, 1, " ", title_fg, title_bg)
+      local btn_count = 0
+      if self.props.closable    ~= false then btn_count = btn_count + 1 end
+      if self.props.maximisable ~= false then btn_count = btn_count + 1 end
+      if self.props.minimisable ~= false then btn_count = btn_count + 1 end
+      local title = clamp_title(self.props.title, math.max(0, b.w - 4 - btn_count * 2))
+      for i = 1, #title do
+        buffer:set(b.x + 1 + i, b.y, title:sub(i, i), title_fg, title_bg)
+      end
+
+      local cx = b.x + b.w - 2
+      if self.props.closable ~= false then
+        buffer:set(cx, b.y, "×", title_fg, title_bg); cx = cx - 2
+      end
+      if self.props.maximisable ~= false then
+        local glyph = (self.wm_state and self.wm_state.state == "maximised") and "▢" or "▣"
+        buffer:set(cx, b.y, glyph, title_fg, title_bg); cx = cx - 2
+      end
+      if self.props.minimisable ~= false then
+        buffer:set(cx, b.y, "_", title_fg, title_bg)
+      end
+
+      if self.props.resizable ~= false then
+        buffer:set(b.x + b.w - 1, b.y + b.h - 1, "↘", title_fg, bg)
+      end
+
+      for _, c in ipairs(self.children) do
+        if c.visible then c:draw(buffer, theme) end
+      end
       self.dirty = false
     end,
 
     on_event = function(self, ev)
       if ev.type == "touch" and self:hit(ev.x, ev.y) then
-        if ev.y == self.bounds.y then
-          if self.props.closable ~= false and ev.x == self.bounds.x + self.bounds.w - 2 then
-            if self.props.on_close then self.props.on_close(self) end
-            return true
+        if self.props.on_focus then self.props.on_focus(self) end
+        local b = self.bounds
+        if ev.y == b.y then
+          local cx = b.x + b.w - 2
+          if self.props.closable ~= false then
+            if ev.x == cx then
+              if self.props.on_close then self.props.on_close(self) end
+              return true
+            end
+            cx = cx - 2
           end
-          self.state.dragging = true
-          self.state.drag_dx = ev.x - self.bounds.x
-          self.state.drag_dy = ev.y - self.bounds.y
+          if self.props.maximisable ~= false then
+            if ev.x == cx then
+              if self.props.on_max then self.props.on_max(self) end
+              return true
+            end
+            cx = cx - 2
+          end
+          if self.props.minimisable ~= false then
+            if ev.x == cx then
+              if self.props.on_min then self.props.on_min(self) end
+              return true
+            end
+          end
+          if self.props.on_drag_start then
+            self.props.on_drag_start(self, "move", ev.x, ev.y)
+          end
           return true
         end
-      elseif ev.type == "drag" and self.state.dragging then
-        local nx, ny = ev.x - self.state.drag_dx, ev.y - self.state.drag_dy
-        self.bounds.x, self.bounds.y = nx, ny
-        if self.children[1] then
-          self.children[1]:layout(nx + 1, ny + 2, self.bounds.w - 2, self.bounds.h - 3)
+        if self.props.resizable ~= false
+            and ev.x == b.x + b.w - 1 and ev.y == b.y + b.h - 1 then
+          if self.props.on_drag_start then
+            self.props.on_drag_start(self, "resize", ev.x, ev.y)
+          end
+          return true
         end
-        self:invalidate(); return true
-      elseif ev.type == "drop" then
-        self.state.dragging = false; return false
       end
-      -- Forward unhandled events to children.
       for i = #self.children, 1, -1 do
         if self.children[i].visible and self.children[i]:on_event(ev) then return true end
       end
       return false
     end,
   }, props or {})
-  if props and props.body then w:add_child(props.body) end
-  return w
+  W.wm_state = nil
+  if props and props.body then W:add_child(props.body) end
+  return W
 end
