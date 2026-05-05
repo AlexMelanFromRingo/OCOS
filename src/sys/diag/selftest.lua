@@ -41,6 +41,19 @@ function M.run()
   check("vfs.list /bin",  function() assert(#vfs.list("/bin") > 0) end)
   check("vfs read /init", function() local s = vfs.read_all("/init.lua"); assert(s and #s > 0) end)
   check("sched.sleep(0)", function() sched.sleep(0) end)
+  check("sched.wait timeout", function()
+    -- Regression: wait(filter, timeout) used to hang forever when the
+    -- deadline expired and no signal matched, because is_ready and
+    -- compute_wait both ignored "waiting" deadlines. The boot-menu
+    -- "default after 2 s" relied on this; without the fix the timer
+    -- never fires and init never autostarts.
+    local t0 = computer.uptime()
+    local ev = sched.wait(function(name) return name == "__never_fires" end, 0.2)
+    local elapsed = computer.uptime() - t0
+    assert(ev == nil, "wait should return nil on timeout, got " .. tostring(ev))
+    assert(elapsed >= 0.15, "returned too early: " .. tostring(elapsed))
+    assert(elapsed <= 1.0,  "took too long: " .. tostring(elapsed))
+  end)
   check("ipc echo",       function()
     local got
     local h = ipc.subscribe("test.echo", function(p) got = p end)

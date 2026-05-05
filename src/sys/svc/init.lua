@@ -38,32 +38,69 @@ local function read_pinned_mode()
   return tostring(t.mode)
 end
 
+local BOOT_TIMEOUT  = 3
+local DEFAULT_MODE  = "console"
+
 local function choose_mode_from_user()
+  local gpu = require("drv.gpu")
   console.init()
   console.set_fg(0xCCCCFF); console.writeln(_OSVERSION)
-  console.set_fg(0x888888)
-  console.writeln("press any key for boot menu (default: console in 2s)")
-  console.set_fg(0xCCCCCC)
-
-  local ev = sched.wait(function(n) return n == "key_down" end, 2)
-  if not ev then return "console" end
-
-  console.clear()
-  console.set_fg(0xCCCCFF); console.writeln(_OSVERSION); console.writeln("")
-  console.set_fg(0xCCCCCC)
+  console.set_fg(0xCCCCCC); console.writeln("")
   console.writeln("Boot menu:")
   console.writeln("  1) Console — TTY shell (default)")
   console.writeln("  2) Desktop — GUI compositor")
   console.writeln("  3) Safe   — recovery shell, no services")
   console.writeln("")
-  console.write("choice: ")
+
+  -- Animated countdown bar over BOOT_TIMEOUT seconds. Polling every
+  -- 0.1 s; bar is 28 cells wide so each tick clears one. Pressing
+  -- 1/2/3 short-circuits; pressing anything else cancels the timer
+  -- and waits for an explicit choice.
+  local bar_x, bar_y, bar_w = 2, ({console.cursor()})[2], 28
+  console.writeln(""); console.writeln("")
+
+  local function paint_bar(remaining)
+    local fg = console.fg()
+    console.set_fg(0x666666)
+    gpu.set(bar_x, bar_y, "[" .. string.rep(" ", bar_w) .. "]")
+    local filled = math.floor(bar_w * remaining / BOOT_TIMEOUT + 0.5)
+    if filled > 0 then
+      console.set_fg(0x4FA0F0)
+      gpu.set(bar_x + 1, bar_y, string.rep("=", filled))
+    end
+    console.set_fg(0x888888)
+    gpu.set(bar_x + bar_w + 3, bar_y,
+      string.format("default: %s in %.1fs ", DEFAULT_MODE, remaining))
+    console.set_fg(fg)
+  end
+
+  local function decode_key(ev)
+    local _, char, code = ev.args[1], ev.args[2], ev.args[3]
+    if char == 49 or code == 28 then return "console" end
+    if char == 50 then                return "gui"     end
+    if char == 51 then                return "safe"    end
+  end
+
+  local deadline = computer.uptime() + BOOT_TIMEOUT
   while true do
-    local kev = sched.wait(function(n) return n == "key_down" end)
-    if kev then
-      local _, char, code = kev.args[1], kev.args[2], kev.args[3]
-      if char == 49 or code == 28 then console.writeln("1"); return "console" end
-      if char == 50 then console.writeln("2"); return "gui"     end
-      if char == 51 then console.writeln("3"); return "safe"    end
+    local rem = deadline - computer.uptime()
+    if rem <= 0 then return DEFAULT_MODE end
+    paint_bar(rem)
+    local poll = math.min(rem, 0.1)
+    local ev = sched.wait(function(n) return n == "key_down" end, poll)
+    if ev then
+      local mode = decode_key(ev)
+      if mode then return mode end
+      -- Other key: cancel timer, wait for explicit 1/2/3.
+      console.set_fg(0xCCCCCC)
+      gpu.set(bar_x, bar_y, "press 1/2/3 (Enter = console)" .. string.rep(" ", 30))
+      while true do
+        local kev = sched.wait(function(n) return n == "key_down" end)
+        if kev then
+          local m = decode_key(kev)
+          if m then return m end
+        end
+      end
     end
   end
 end

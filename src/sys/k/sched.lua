@@ -26,9 +26,13 @@ local shutdown_requested
 local last_proc_id
 
 local function is_ready(p)
-  if p.status == "ready"   then return true end
-  if p.status == "sleeping" and p.deadline and computer.uptime() >= p.deadline then
-    return true
+  if p.status == "ready" then return true end
+  if p.deadline and computer.uptime() >= p.deadline then
+    -- Sleeping deadlines wake the proc with no event; waiting deadlines
+    -- (the timeout argument to sched.wait) wake it with last_event=nil.
+    if p.status == "sleeping" or p.status == "waiting" then
+      return true
+    end
   end
   return false
 end
@@ -36,14 +40,14 @@ end
 local function compute_wait()
   -- Return the number of seconds to wait in pullSignal:
   --   0    if any process is immediately ready
-  --   t>0  if some process has the closest sleep deadline
+  --   t>0  if some process has the closest sleep / wait deadline
   --   1    default tick if nothing is sleeping (still want to drain signals)
   for _, p in ipairs(proc_mod.list()) do
     if p.status == "ready" then return 0 end
   end
   local best = math.huge
   for _, p in ipairs(proc_mod.list()) do
-    if p.status == "sleeping" and p.deadline then
+    if (p.status == "sleeping" or p.status == "waiting") and p.deadline then
       best = math.min(best, p.deadline - computer.uptime())
     end
   end
