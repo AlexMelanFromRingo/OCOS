@@ -1,9 +1,4 @@
--- /bin/sh.lua — interactive OCOS shell. Reads the user's commands from
--- the current process's stdin (typically the console), parses, and runs.
--- Inherits its own process capabilities so children we spawn (cp, mv,
--- ...) get the same set; without that step the shell strips every cap
--- under cap.is_enforcing() = true, which silently breaks any write.
-
+-- /bin/sh.lua — interactive OCOS shell.
 local sh    = require("lib.sh")
 local sched = require("k.sched")
 
@@ -13,9 +8,7 @@ local streams = io and { stdin = io.stdin, stdout = io.stdout, stderr = io.stder
 local function inherited_caps()
   local out = {}
   local me = sched.current()
-  if me and me.caps then
-    for k in pairs(me.caps) do out[#out + 1] = k end
-  end
+  if me and me.caps then for k in pairs(me.caps) do out[#out+1] = k end end
   return out
 end
 
@@ -30,5 +23,4 @@ sh.repl({
   caps    = inherited_caps(),
   banner  = (_OSVERSION or "OCOS") .. " — type `help`, `exit` to leave",
 })
-
 sched.exit(0)
