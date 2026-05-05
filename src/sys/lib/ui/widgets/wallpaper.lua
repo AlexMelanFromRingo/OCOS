@@ -1,14 +1,37 @@
 -- /sys/lib/ui/widgets/wallpaper.lua — desktop background.
 --
--- Two modes: solid colour (default) and pattern (a function the caller
--- supplies that returns ch, fg, bg per cell). Patterns enable the rain /
--- dvd / starfield wallpapers without the compositor knowing about them.
+-- Modes:
+--   solid colour (`color = 0xRRGGBB`)
+--   pattern function (`pattern = function(x,y,theme) return ch,fg,bg end`)
+--   per-user file (`pattern_path = "/home/<user>/.profile/wallpaper.lua"`)
+--   built-in by name (`builtin = "stars" | "stripes"`)
 
 local widget = require("lib.ui.widget")
+local vfs    = require("k.vfs")
+
+local function load_pattern_path(path)
+  if not (path and vfs.exists(path)) then return nil end
+  local src = vfs.read_all(path)
+  if not src then return nil end
+  local fn = load(src, "=" .. path, "t", { math = math, string = string })
+  if not fn then return nil end
+  local ok, p = pcall(fn)
+  if ok and type(p) == "function" then return p end
+end
+
+local function load_builtin(name)
+  if not name then return nil end
+  local path = "/sys/lib/ui/wallpapers/" .. name .. ".lua"
+  return load_pattern_path(path)
+end
 
 return function(props)
+  props = props or {}
+  if not props.pattern then
+    props.pattern = load_pattern_path(props.pattern_path) or load_builtin(props.builtin)
+  end
   return widget.new("wallpaper", {
-    measure = function(self, max_w, max_h) return max_w, max_h end,
+    measure = function(_, max_w, max_h) return max_w, max_h end,
     draw = function(self, buffer, theme)
       local b = self.bounds
       local desktop_bg = (theme.desktop and theme.desktop.bg) or theme.palette.bg
@@ -25,5 +48,5 @@ return function(props)
       end
       self.dirty = false
     end,
-  }, props or {})
+  }, props)
 end

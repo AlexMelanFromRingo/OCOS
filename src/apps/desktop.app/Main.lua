@@ -1,8 +1,4 @@
 -- /apps/desktop.app/Main.lua — desktop shell.
---
--- Owns the wallpaper, top status bar and bottom taskbar. Spawns a
--- WM and exposes it via session.wm so launched apps put their bodies
--- into managed windows. Power menu is reachable from the taskbar.
 
 local _, env, session = ...
 
@@ -10,36 +6,37 @@ local ui    = require("lib.ui")
 local sched = require("k.sched")
 local vfs   = require("k.vfs")
 local ipc   = require("k.ipc")
-local lang  = require("lib.lang")
 local widget = ui.widget
 local label  = ui.widgets.label
 local clock  = require("lib.ui.widgets.clock")
-local dock   = require("lib.ui.widgets.dock")
 local wall   = require("lib.ui.widgets.wallpaper")
 local taskbar = ui.widgets.taskbar
-local menu   = ui.widgets.menu
 local list_w = ui.widgets.list
 
 local compositor = session and session.compositor
 if not compositor then return 0 end
 
-local theme = compositor.theme
+local theme  = compositor.theme
 local sw, sh = compositor:size()
+local USER   = (env and env.USER) or "root"
+local HOME   = (env and env.HOME) or "/home"
 
--- ---- WM --------------------------------------------------------------
+-- ---- WM ------------------------------------------------------------
 local wm = ui.wm.new(compositor)
 session.wm = wm
+session.notify = function(body, title, level)
+  ipc.publish("ui.notify", { title = title or "Notice", body = body, level = level or "info" })
+end
 
-local function launch(path)
+local function launch(path, app_args, app_env)
   if not vfs.exists(path) then return end
   local src = vfs.read_all(path); if not src then return end
-  local fn, _ = load(src, "=" .. path, "t", _G)
-  if not fn then return end
-  sched.spawn(function() pcall(fn, {}, env or {}, session) end,
+  local fn = load(src, "=" .. path, "t", _G); if not fn then return end
+  sched.spawn(function() pcall(fn, app_args or {}, app_env or env or {}, session) end,
     { name = "app:" .. path:match("([^/]+)$"), caps = { "*" } })
 end
 
--- ---- Apps menu (popover from the taskbar's `+` button) ---------------
+-- ---- Apps menu ------------------------------------------------------
 
 local APPS = {
   { glyph = "📁", label = "Files",     path = "/apps/files.app/Main.lua"    },
@@ -69,7 +66,7 @@ local function open_launcher()
   }
 end
 
--- ---- Power menu (popover from the taskbar's ⏻) -----------------------
+-- ---- Power menu -----------------------------------------------------
 
 local power_win
 local function open_power_menu()
@@ -98,10 +95,10 @@ local function open_power_menu()
   }
 end
 
--- ---- Status bar (top row) -------------------------------------------
+-- ---- Top status bar -------------------------------------------------
 
 local title_lbl = label({
-  text = " " .. (_OSVERSION or "OCOS"),
+  text = " " .. (_OSVERSION or "OCOS") .. "  ·  " .. USER,
   fg = (theme.taskbar and theme.taskbar.fg) or theme.palette.fg,
   bg = (theme.taskbar and theme.taskbar.bg) or theme.palette.surface,
 })
@@ -124,43 +121,71 @@ local status_bar = widget.new("status-bar", {
 status_bar:add_child(title_lbl)
 status_bar:add_child(status_clock)
 
--- ---- Taskbar (bottom row) -------------------------------------------
+-- ---- Bottom taskbar -------------------------------------------------
 
 local tb = taskbar({
-  wm            = wm,
-  user          = (env and env.USER) or "root",
-  on_launcher   = open_launcher,
-  on_power_menu = open_power_menu,
+  wm = wm, user = USER,
+  on_launcher = open_launcher, on_power_menu = open_power_menu,
 })
 
--- ---- Root composition ------------------------------------------------
+-- ---- Wallpaper (per-user if available) ------------------------------
+
+local wallpaper = wall({
+  pattern_path = HOME .. "/.profile/wallpaper.lua",
+  builtin      = "stripes",
+})
+
+-- ---- Desktop icons (~/Desktop/) -------------------------------------
+
+local desktop_dir = HOME .. "/Desktop"
+pcall(vfs.mkdir, HOME)
+pcall(vfs.mkdir, desktop_dir)
+local icons_w = ui.widgets.icons({ path = desktop_dir, session = session })
+ipc.subscribe("ui.desktop.refresh", function() icons_w:refresh() end)
+
+-- ---- Toast notifications --------------------------------------------
+
+local toast_w = ui.widgets.toast({})
+
+-- ---- Root composition -----------------------------------------------
 
 local root = widget.new("desktop-root", {
   measure = function(_, w, h) return w, h end,
   _layout_children = function(self)
     local b = self.bounds
-    self.children[1]:layout(b.x, b.y, b.w, b.h)         -- wallpaper full
-    self.children[2]:layout(b.x, b.y, b.w, 1)           -- status bar top
-    self.children[3]:layout(b.x, b.y + 1, b.w, b.h - 2) -- workspace middle
-    self.children[4]:layout(b.x, b.y + b.h - 1, b.w, 1) -- taskbar bottom
+    self.children[1]:layout(b.x, b.y, b.w, b.h)              -- wallpaper full
+    self.children[2]:layout(b.x, b.y, b.w, 1)                -- status bar top
+    self.children[3]:layout(b.x + 1, b.y + 2, b.w - 2, b.h - 4)  -- icons (just under status bar, leave taskbar)
+    self.children[4]:layout(b.x, b.y + 1, b.w, b.h - 2)      -- workspace (windows)
+    self.children[5]:layout(b.x, b.y + b.h - 1, b.w, 1)      -- taskbar bottom
+    self.children[6]:layout(b.x, b.y, b.w, b.h)              -- toast overlay
   end,
   draw = function(self, buf, t)
     for _, c in ipairs(self.children) do c:draw(buf, t) end
     self.dirty = false
   end,
 })
-root:add_child(wall({}))
+root:add_child(wallpaper)
 root:add_child(status_bar)
+root:add_child(icons_w)
 root:add_child(wm.root)
 root:add_child(tb)
+root:add_child(toast_w)
 
 compositor:add(root)
 if compositor.attach_wm then compositor:attach_wm(wm) end
 compositor:invalidate()
 
--- A second-tick refresh so the taskbar clock and chips animate.
+-- One-second tick: clock + toast expiry + window chips repaint.
 sched.spawn(function()
-  while true do sched.sleep(1); tb:invalidate(); compositor:invalidate() end
-end, { name = "tb-tick", caps = { "*" } })
+  while true do
+    sched.sleep(1)
+    tb:invalidate(); status_clock:invalidate()
+    compositor:invalidate()
+    computer.pushSignal("__ui_tick")
+  end
+end, { name = "desktop-tick", caps = { "*" } })
+
+ipc.publish("ui.notify", { title = "Welcome", body = "OCOS desktop loaded for " .. USER })
 
 return 0

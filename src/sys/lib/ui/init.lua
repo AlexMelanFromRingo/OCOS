@@ -16,5 +16,7 @@ return {
     window   = require("lib.ui.widgets.window"),
     menu     = require("lib.ui.widgets.menu"),
     taskbar  = require("lib.ui.widgets.taskbar"),
+    toast    = require("lib.ui.widgets.toast"),
+    icons    = require("lib.ui.widgets.icons"),
   },
 }

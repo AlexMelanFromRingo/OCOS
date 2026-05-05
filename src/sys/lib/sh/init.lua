@@ -48,23 +48,40 @@ function M.repl(opts)
   opts = opts or {}
   local shell = new_shell(opts.env)
   shell.caps = opts.caps
-  if opts.banner then console.writeln(opts.banner) end
+  local streams = opts.streams
+  -- TTY shells paint via the console module directly (line editor with
+  -- history, tab completion, caret). Non-TTY shells (the GUI terminal,
+  -- pipelines) round-trip through the stream pair the caller supplied
+  -- — the terminal widget owns its own input area and a console-direct
+  -- prompt would land outside the window on the bare wallpaper.
+  local is_tty = streams and streams.stdout and streams.stdout._isatty
 
-  local hist        = history.open(history_path(shell))
-  local complete_fn = complete.for_shell(shell)
+  if opts.banner then
+    if is_tty then console.writeln(opts.banner)
+    elseif streams and streams.stdout then streams.stdout:write(opts.banner .. "\n") end
+  end
+
+  local hist        = is_tty and history.open(history_path(shell)) or nil
+  local complete_fn = is_tty and complete.for_shell(shell) or nil
 
   while not shell.exit_requested do
-    local accent = console.fg()
-    console.set_fg(0x88FF88)
-    local line = console.read_line(prompt_text(shell), {
-      history      = hist,
-      complete     = complete_fn,
-      on_interrupt = function() return "reset" end,
-    })
-    console.set_fg(accent)
+    local line
+    if is_tty then
+      local accent = console.fg()
+      console.set_fg(0x88FF88)
+      line = console.read_line(prompt_text(shell), {
+        history      = hist,
+        complete     = complete_fn,
+        on_interrupt = function() return "reset" end,
+      })
+      console.set_fg(accent)
+    else
+      streams.stdout:write(prompt_text(shell))
+      line = streams.stdin:read("l")
+    end
     if line == nil then break end
     if line ~= "" then
-      M.run_string(line, shell, opts.streams)
+      M.run_string(line, shell, streams)
     end
   end
   return shell.last_status
