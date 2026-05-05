@@ -71,8 +71,9 @@ emulator, ocvm, and manual loot-disk installs. The short version:
 # Generate the self-contained installer (writes dist/ocos-installer.lua):
 tools/build-installer.py
 
-# On the target VM running OpenOS, with the installer reachable via HTTP:
-wget https://example/ocos-installer.lua /tmp/ocos.lua && /tmp/ocos.lua
+# On the target VM running OpenOS:
+wget https://raw.githubusercontent.com/AlexMelanFromRingo/OCOS/main/dist/ocos-installer.lua /tmp/ocos.lua
+/tmp/ocos.lua
 ```
 
 ## Build & run locally
