@@ -63,5 +63,8 @@ run_mode() {
 rc=0
 run_mode safe    'boot mode: safe'    || rc=1
 run_mode console 'started: logd, sessiond$' || rc=1
-run_mode gui     'started: logd, uid$' || rc=1
+# GUI mode boots logd+sessiond first, then init.svc starts uid
+# manually 300 ms later so uid's suspend lands on a sessiond already
+# in wait_pid (mirrors a user typing `svc start uid` from the TTY).
+run_mode gui     'uid started' || rc=1
 exit $rc
