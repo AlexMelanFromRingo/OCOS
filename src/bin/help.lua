@@ -20,8 +20,11 @@ local sections = {
       "passwd [user]", "sudo <cmd>" }
   },
   { "Packages",
-    { "pkg list", "pkg info <id>", "pkg install [-f] <dir>",
+    { "pkg list", "pkg info <id>", "pkg install [-f] <dir|id>",
       "pkg uninstall <id>", "pkg verify <id>" }
+  },
+  { "Developer",
+    { "repl", "profile <script>" }
   },
   { "Pipes / redirects",
     { "cmd1 | cmd2", "cmd > file", "cmd >> file", "cmd < file", "cmd 2> file",

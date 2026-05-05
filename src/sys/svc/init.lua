@@ -203,6 +203,24 @@ local function selftest_run()
     cap.set_enforce(false)
   end)
 
+  check("inspect cycles", function()
+    local inspect = require("lib.devtools.inspect")
+    local t = { name = "x", num = 42 }
+    t.self = t
+    local s = inspect.inspect(t)
+    assert(s:find("name = \"x\"", 1, true), "name field: " .. s)
+    assert(s:find("<table:", 1, true), "cycle marker: " .. s)
+  end)
+
+  check("profile bench", function()
+    local prof = require("lib.devtools.profile")
+    local r = prof.bench("noop", 1000, function() end)
+    assert(r.iterations == 1000, "iterations recorded")
+    assert(r.elapsed_s >= 0, "elapsed: " .. tostring(r.elapsed_s))
+    local report = prof.format({ r })
+    assert(report:find("noop", 1, true), "report contains name")
+  end)
+
   check("json codec", function()
     local json = require("lib.codec.json")
     local round = function(v)
