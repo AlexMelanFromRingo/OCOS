@@ -1,7 +1,7 @@
 # Contributing to OCOS
 
-This document is the short version. Read [`DESIGN.md`](DESIGN.md) and
-[`ROADMAP.md`](ROADMAP.md) before opening a non-trivial PR.
+This document is the short version. Read [`DESIGN.md`](./DESIGN.md) and
+[`ROADMAP.md`](./ROADMAP.md) before opening a non-trivial PR.
 
 ## Style and conventions
 

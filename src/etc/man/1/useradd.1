@@ -1,0 +1,28 @@
+useradd — create a new user
+
+SYNOPSIS
+  useradd [--admin] NAME
+
+DESCRIPTION
+  Creates a new entry in /etc/passwd with a PBKDF2-hashed password and
+  a default capability set that depends on the role:
+
+    --admin   caps = {"*"} — full privileges. The user can sudo.
+    (none)    limited set:
+              syscall:exec
+              syscall:write:/home/<name>/*
+              syscall:write:/tmp/*
+              component:* (gpu, screen, keyboard, internet, modem,
+                           tunnel, data, filesystem:*)
+              ipc:channel:*
+
+  The home directory /home/<name> is created best-effort; failure to
+  create it is not fatal (the boot fs may be read-only in dev).
+
+  Capability enforcement defaults to true (/etc/security.cfg). Until
+  the first user is created, sessiond drops to a privileged root shell
+  with caps={"*"}; immediately after `useradd` the next login follows
+  the limited-cap regime.
+
+SEE ALSO
+  passwd(1), userdel(1), sudo(1), security(5)

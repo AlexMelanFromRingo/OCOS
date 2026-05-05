@@ -1,0 +1,26 @@
+sudo — run a command with elevated capabilities after re-auth
+
+SYNOPSIS
+  sudo COMMAND [ARGS...]
+
+DESCRIPTION
+  Authenticates the current user against /etc/passwd. If the user is
+  in the admin set (caps contain "*"), the requested command is
+  spawned with caps={"*"}. Otherwise sudo refuses with "<user> is not
+  in the admin group" and the audit log records the attempt.
+
+  Admins are users created by `useradd --admin`. Limited users (the
+  default) cannot escalate even if they know an admin's password — the
+  identity check is on the calling user, not on the password they
+  type.
+
+  Every sudo invocation — success, denial or password failure — writes
+  an entry to /var/log/audit.log.
+
+EXAMPLES
+  sudo useradd --admin alex            # only an admin can do this
+  sudo passwd                          # change the current user's pw
+  sudo svc start uid                   # bring up the GUI from the TTY
+
+SEE ALSO
+  useradd(1), passwd(1), security(5)

@@ -9,8 +9,62 @@
 
 local boot_addr, read_all = ...
 
-_G._OSVERSION = "OCOS 0.1.0"
+_G._OSVERSION = "OCOS 0.2.0"
 _G._OCOS = { boot_addr = boot_addr, started_at = computer.uptime() }
+
+-- ---- boot mode menu -----------------------------------------------------
+--
+-- Runs before any kernel module is loaded, talking to the GPU via raw
+-- component.invoke and to the keyboard via computer.pullSignal. If the
+-- BIOS already pinned a mode (via eeprom.getData() {mode=...}) we skip
+-- the menu and respect the pre-selected choice.
+
+-- Skip the menu entirely when the selftest marker is present — it eats
+-- 3 s of the test-boot.sh budget for no reason. We also skip when the
+-- BIOS already chose a mode via eeprom.getData() {mode=...}.
+local function _selftest_marker()
+  local boot_proxy = component.proxy(boot_addr)
+  return boot_proxy and boot_proxy.exists and boot_proxy.exists("/etc/boot.selftest")
+end
+
+if not _G._OCOS_BOOT_MODE and not _selftest_marker() then
+  local gpu_addr = component.list("gpu")()
+  if gpu_addr then
+    local sw, sh = component.invoke(gpu_addr, "getResolution")
+    sw, sh = sw or 80, sh or 25
+    component.invoke(gpu_addr, "setBackground", 0x000A14)
+    component.invoke(gpu_addr, "fill", 1, 1, sw, sh, " ")
+    component.invoke(gpu_addr, "setForeground", 0xCCCCFF)
+    component.invoke(gpu_addr, "set", 2, 2, _OSVERSION)
+    component.invoke(gpu_addr, "setForeground", 0xFFFFFF)
+    component.invoke(gpu_addr, "set", 2, 4, "Choose boot mode:")
+    component.invoke(gpu_addr, "setForeground", 0xCCCCCC)
+    component.invoke(gpu_addr, "set", 4, 5, "1. Desktop (GUI, default)")
+    component.invoke(gpu_addr, "set", 4, 6, "2. Console (TTY only)")
+    component.invoke(gpu_addr, "set", 4, 7, "3. Safe mode")
+    component.invoke(gpu_addr, "setForeground", 0x888888)
+    component.invoke(gpu_addr, "set", 2, 9, "press 1/2/3 within 3s, Enter for default")
+
+    local deadline = computer.uptime() + 3
+    local mode
+    while computer.uptime() < deadline do
+      local rem = deadline - computer.uptime()
+      local ev, _, char, code = computer.pullSignal(rem > 0.1 and 0.1 or rem)
+      if ev == "key_down" then
+        if code == 28 or code == 156 or char == 49 then mode = "gui"; break end
+        if char == 50 then mode = "console"; break end
+        if char == 51 then mode = "safe";    break end
+      end
+    end
+    _G._OCOS_BOOT_MODE = mode or "gui"
+    component.invoke(gpu_addr, "setBackground", 0x000000)
+    component.invoke(gpu_addr, "fill", 1, 1, sw, sh, " ")
+  else
+    _G._OCOS_BOOT_MODE = "gui"
+  end
+end
+if not _G._OCOS_BOOT_MODE then _G._OCOS_BOOT_MODE = "gui" end
+if _G._OCOS_BOOT_MODE == "safe" then _G._OCOS_SAFE = true end
 
 -- ---- Minimal require rooted at /sys/ ------------------------------------
 

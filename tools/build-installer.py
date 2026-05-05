@@ -38,7 +38,7 @@ INSTALLER_SOURCE = r"""-- OCOS streaming installer.
 --   /tmp/ocos.lua 88895671                   -- explicit target by address prefix
 --   /tmp/ocos.lua 88895671 https://my.fork   -- target + custom base URL
 --   /tmp/ocos.lua --local /mnt/loot          -- read files from a local mount instead of HTTP
---   /tmp/ocos.lua --flash-eeprom              -- (also) overwrite the EEPROM with OCOS BIOS
+--   /tmp/ocos.lua --no-flash-eeprom           -- skip flashing the EEPROM (default IS to flash)
 
 local args = { ... }
 
@@ -53,7 +53,7 @@ local function ok(s)     io.write("[ok] " .. s .. "\n") end
 
 -- ---- arg parsing -------------------------------------------------------
 
-local target_prefix, base_url, local_root, flash_eeprom
+local target_prefix, base_url, local_root, flash_eeprom, non_interactive
 do
   local i = 1
   while i <= #args do
@@ -64,6 +64,15 @@ do
       i = i + 2
     elseif a == "--flash-eeprom" then
       flash_eeprom = true
+      non_interactive = true
+      i = i + 1
+    elseif a == "--no-flash-eeprom" then
+      flash_eeprom = false
+      non_interactive = true
+      i = i + 1
+    elseif a == "-y" or a == "--yes" then
+      non_interactive = true
+      flash_eeprom = (flash_eeprom == nil) and true or flash_eeprom
       i = i + 1
     elseif a:match("^https?://") then
       base_url = a
@@ -74,6 +83,18 @@ do
     end
   end
   base_url = base_url or DEFAULT_BASE
+end
+
+local function prompt(question, default)
+  io.write(question .. " [" .. (default and "Y/n" or "y/N") .. "] ")
+  io.write = io.write                              -- ensure flushed in OpenOS
+  local reply = io.read()
+  if not reply then return default end
+  reply = reply:lower():gsub("^%s+", ""):gsub("%s+$", "")
+  if reply == "" then return default end
+  if reply == "y" or reply == "yes" or reply == "д" or reply == "да" then return true end
+  if reply == "n" or reply == "no"  or reply == "н" or reply == "нет" then return false end
+  return default
 end
 
 -- ---- target selection --------------------------------------------------
@@ -210,6 +231,17 @@ local target_addr = target.addr
 ok("installing OCOS to " .. target_addr:sub(1, 8) ..
    " (" .. (target.label ~= "" and target.label or "<unlabelled>") .. ")")
 ok((local_root and "source: local " .. local_root) or ("source: " .. base_url))
+
+-- Interactive prompts when no flag forced the choice. Scripts pass -y or
+-- the explicit --[no-]flash-eeprom flag to bypass.
+if not non_interactive then
+  local has_eeprom = component.list("eeprom")() ~= nil
+  if has_eeprom then
+    io.write("\n")
+    flash_eeprom = prompt("Flash the EEPROM with OCOS BIOS? (one-way without a backup)", true)
+  end
+end
+if flash_eeprom == nil then flash_eeprom = true end
 
 -- Fetch the manifest.
 local mfst_src

@@ -1,11 +1,24 @@
 -- /bin/useradd.lua — create a new user.
+-- Usage: useradd [--admin] <name>
+--   --admin   grant the new user caps={"*"} (full privileges; can sudo).
+--             Without it, the user gets a sane limited set: exec, write
+--             to /home/<name> + /tmp, all hardware components, IPC.
+
 local args, env = ...
 local users   = require("lib.auth.users")
 local console = require("lib.term.console")
 local sched   = require("k.sched")
 
-local name = args[1]
-if not name then io.stderr:write("usage: useradd <name>\n"); return 2 end
+local role = "user"
+local name
+for i = 1, #args do
+  local a = args[i]
+  if a == "--admin" then role = "admin"
+  elseif a:sub(1, 1) == "-" then io.stderr:write("useradd: unknown option: " .. a .. "\n"); return 2
+  else name = name or a end
+end
+
+if not name then io.stderr:write("usage: useradd [--admin] <name>\n"); return 2 end
 if users.get(name) then io.stderr:write("user exists\n"); return 1 end
 
 local function masked()
@@ -26,8 +39,10 @@ end
 console.write("password: "); local p1 = masked()
 console.write("retype:   "); local p2 = masked()
 if p1 ~= p2 then io.stderr:write("passwords don't match\n"); return 1 end
+if #p1 < 4 then io.stderr:write("password too short (need >= 4 chars)\n"); return 1 end
 
-local ok, err = users.create(name, p1, {})
+local ok, err = users.create(name, p1, { role = role })
 if not ok then io.stderr:write("useradd: " .. tostring(err) .. "\n"); return 1 end
-print("user '" .. name .. "' created")
+print(string.format("user '%s' created (%s)", name,
+  role == "admin" and "full privileges — can sudo" or "limited; sudo will refuse"))
 return 0

@@ -9,9 +9,11 @@ local sched  = require("k.sched")
 local ipc    = require("k.ipc")
 
 local function format_clock()
-  -- OS uptime → HH:MM:SS for in-game time. The OC computer.realTime() gives
-  -- wall time; we use that so the player's clock matches the real world.
-  local t = math.floor(computer.realTime() or computer.uptime())
+  -- Prefer OC's wall clock when the host exposes it; older builds (e.g.
+  -- the 1.12.2 community port) ship without computer.realTime, so fall
+  -- back to uptime. The `and` form is necessary — `realTime() or …`
+  -- still calls realTime, which errors out if the field is nil.
+  local t = math.floor((computer.realTime and computer.realTime()) or computer.uptime())
   local h = math.floor(t / 3600) % 24
   local m = math.floor(t / 60) % 60
   local s = t % 60

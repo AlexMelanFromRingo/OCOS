@@ -101,6 +101,30 @@ function M.get(name)
   return db[name]
 end
 
+-- M.default_caps(name, role, home)
+--   role = "admin"  → caps = {"*"}     (full privileges; sudo works)
+--   role = "user"   → caps = limited set: exec, write to home + tmp, all
+--                     hardware components, IPC. Cannot touch /etc, /sys
+--                     or any other user's home.
+-- For root (uid = 0) we always return {"*"} regardless of role argument.
+function M.default_caps(name, role, home)
+  if name == "root" or role == "admin" then return { "*" } end
+  return {
+    "syscall:exec",
+    "syscall:write:" .. (home or "/home/" .. name) .. "/*",
+    "syscall:write:/tmp/*",
+    "component:gpu",
+    "component:screen",
+    "component:keyboard",
+    "component:internet",
+    "component:modem",
+    "component:tunnel",
+    "component:data",
+    "component:filesystem:*",
+    "ipc:channel:*",
+  }
+end
+
 function M.create(name, password, opts)
   opts = opts or {}
   local db, path = load_db()
@@ -108,17 +132,30 @@ function M.create(name, password, opts)
   local salt = rand_hex(16)
   local iters = opts.iters or DEFAULT_ITERS
   local hex = pbkdf2.derive(password, salt, iters)
+  local home = opts.home or ("/home/" .. name)
   db[name] = {
     uid    = opts.uid or (next(db) and 1000 + #db or 0),
     gid    = opts.gid or 1000,
     salt   = salt,
     pbkdf2 = hex,
     iters  = iters,
-    home   = opts.home or ("/home/" .. name),
+    home   = home,
     shell  = opts.shell or "/bin/sh.lua",
-    caps   = opts.caps or { "*" },
+    caps   = opts.caps or M.default_caps(name, opts.role or "user", home),
   }
+  -- Best-effort homedir creation. We don't error if it fails (the user
+  -- may be on a read-only boot fs in dev; production installs put OCOS
+  -- on a writable disk and this just works).
+  pcall(vfs.mkdir, home)
   return save_db(db, path)
+end
+
+function M.is_admin(name)
+  local rec = M.get(name); if not rec then return false end
+  for _, c in ipairs(rec.caps or {}) do
+    if c == "*" then return true end
+  end
+  return false
 end
 
 function M.verify(name, password)

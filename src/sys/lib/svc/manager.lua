@@ -237,10 +237,19 @@ local function on_proc_exit(payload)
   end
 end
 
-function M.start_all_autostart(unit_dir)
-  M.load_units(unit_dir)
+function M.set_unit_autostart(id, value)
+  if not services or not services[id] then return nil, "no such service: " .. id end
+  services[id].unit.autostart = value and true or false
+  return true
+end
+
+function M.start_autostart()
+  -- Starts every loaded unit whose autostart flag is true. Useful when
+  -- callers want to load_units once, mutate flags (e.g., the boot mode
+  -- selector disabling uid), then start; calling start_all_autostart
+  -- would clobber those mutations by re-reading the unit files.
   local ids = {}
-  for id, svc in pairs(services) do
+  for id, svc in pairs(services or {}) do
     if svc.unit.autostart then ids[#ids + 1] = id end
   end
   local order, err = topo_sort(ids)
@@ -250,6 +259,11 @@ function M.start_all_autostart(unit_dir)
     if not ok then log.error("svc", "autostart " .. id .. " failed: " .. tostring(e)) end
   end
   return order
+end
+
+function M.start_all_autostart(unit_dir)
+  M.load_units(unit_dir)
+  return M.start_autostart()
 end
 
 function M.bind_supervisor()

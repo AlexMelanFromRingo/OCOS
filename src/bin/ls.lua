@@ -83,7 +83,8 @@ local out = io.stdout
 local use_color = (want_color == "always") or (want_color == "auto" and out._isatty)
 
 local function emit(name, kind)
-  local suffix = kind == "dir" and "/" or ""
+  -- The colour already tells the user this is a directory; no trailing
+  -- slash, the white "/" after a coloured name looked off-balance.
   if use_color then
     local fg = FG[kind]
     if fg then
@@ -92,9 +93,9 @@ local function emit(name, kind)
     else
       out:write(name)
     end
-    out:write(suffix .. "\n")
+    out:write("\n")
   else
-    out:write(name .. suffix .. "\n")
+    out:write(name .. "\n")
   end
 end
 

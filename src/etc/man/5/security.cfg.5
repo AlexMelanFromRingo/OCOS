@@ -1,0 +1,33 @@
+security.cfg — kernel security policy
+
+LOCATION
+  /etc/security.cfg
+
+FORMAT
+  return {
+    enforce      = true | false,
+    default_user = "<name>",
+  }
+
+DESCRIPTION
+  enforce  controls whether cap.check actually denies on a missing
+           capability. With enforce=false the kernel logs every denial
+           to the audit log but lets the call proceed; this is the
+           "log-only" mode used during initial bring-up of a fresh
+           machine. The shipped default is true.
+
+  default_user is informational; sessiond uses it as the username
+           offered at the login prompt.
+
+  Capability enforcement bites at every:
+    * exec.exec      → syscall:exec
+    * vfs.open(W)    → syscall:write:<path>
+    * proc.kill      → syscall:kill[:9]
+    * drv.data       → component:data
+
+  An empty /etc/passwd causes sessiond to spawn a root shell with
+  caps={"*"} regardless of enforce — the bootstrap path stays
+  reachable on first boot.
+
+SEE ALSO
+  useradd(1), sudo(1), audit(1), passwd(5)

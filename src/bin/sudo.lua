@@ -31,7 +31,17 @@ local function masked()
   end
 end
 
-if user ~= "root" or users.get(user) then
+-- Refuse early when the user has no entry in /etc/passwd OR is not in
+-- the admin set. We surface "not in the admin group" rather than just
+-- failing silently because the user is more likely to have made a
+-- useradd-without--admin mistake than a real intrusion attempt.
+if users.get(user) then
+  if not users.is_admin(user) then
+    audit.write({ kind = "sudo.deny", user = user,
+      action = table.concat(args, " "), detail = "not an admin" })
+    io.stderr:write("sudo: " .. user .. " is not in the admin group\n")
+    return 1
+  end
   console.write("[sudo] password for " .. user .. ": ")
   local pw = masked()
   if not users.verify(user, pw) then
