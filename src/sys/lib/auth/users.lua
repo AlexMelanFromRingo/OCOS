@@ -17,23 +17,28 @@ local PASSWD_PATH  = "/etc/passwd"
 local DEFAULT_ITERS = 5000                        -- ~250 ms on T3 Lua 5.3
 
 local function find_passwd_path()
-  -- Prefer the writable /mnt/X/etc/passwd if /etc is read-only; fall back to
-  -- the source-tree path so a fresh boot still has root.
+  -- Existing /etc/passwd wins, regardless of which fs holds it.
   if vfs.exists(PASSWD_PATH) then return PASSWD_PATH end
   for _, m in ipairs(vfs.mounts()) do
     if m.prefix:sub(1, 5) == "/mnt/" then
-      pcall(vfs.mkdir, m.prefix .. "/etc")
       local p = m.prefix .. "/etc/passwd"
       if vfs.exists(p) then return p end
     end
   end
-  -- Default to the first writable mount so create() can write the initial table.
+  -- No existing record. Pick a writable target. Prefer a /mnt/<addr>
+  -- mount when present (covers the OCVM dev setup whose boot fs is
+  -- read-only); otherwise create the file on the boot fs (the
+  -- single-disk production install — without this fallback the
+  -- function returned nil and useradd silently failed because
+  -- save_db got a nil path).
   for _, m in ipairs(vfs.mounts()) do
     if m.prefix:sub(1, 5) == "/mnt/" then
       pcall(vfs.mkdir, m.prefix .. "/etc")
       return m.prefix .. "/etc/passwd"
     end
   end
+  pcall(vfs.mkdir, "/etc")
+  return PASSWD_PATH
 end
 
 local function rand_hex(n)
