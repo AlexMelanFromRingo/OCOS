@@ -154,30 +154,130 @@ function M.shl_bit(a, k)
   return out
 end
 
+-- Knuth's Algorithm D (TAoCP Vol 2 §4.3.1) — limb-precision long
+-- division. ~16x faster than the bit-by-bit version because the
+-- quotient digit is estimated from a 32-bit / 16-bit divide instead
+-- of being teased out one bit at a time.
+local function shr_bit_inplace(a, k)
+  -- Right shift in place by k < 16 bits. a is mutated.
+  if k == 0 then return a end
+  local borrow = 0
+  for i = #a, 1, -1 do
+    local v = a[i] | (borrow << 16)
+    borrow  = v & ((1 << k) - 1)
+    a[i]    = v >> k
+  end
+  return trim(a)
+end
+
+local function shl_inplace(a, k)
+  -- Left shift in place by k < 16 bits. a is mutated; may grow by one limb.
+  if k == 0 then return a end
+  local carry = 0
+  for i = 1, #a do
+    local v = (a[i] << k) | carry
+    a[i] = v & LIMB_M1
+    carry = v >> 16
+  end
+  if carry > 0 then a[#a + 1] = carry end
+  return a
+end
+
 function M.divmod(a, b)
-  -- Schoolbook long division: returns (q, r) with a = q*b + r.
-  -- Assumes b > 0. Slow but adequate for the RSA verify path because
-  -- modexp uses repeated mod-mul where each mod is one divmod.
   if M.is_zero(b) then error("bigint.divmod: division by zero") end
   if M.cmp(a, b) < 0 then return M.zero(), copy(a) end
-  -- Convert a to a bit list and shift bits one at a time into r,
-  -- subtracting b when r >= b. Standard long division.
-  local q = {}
-  for i = 1, #a do q[i] = 0 end
-  local r = M.zero()
-  for i = #a, 1, -1 do
-    for bit = 15, 0, -1 do
-      r = M.shl_bit(r, 1)
-      if (a[i] >> bit) & 1 == 1 then r[1] = (r[1] or 0) | 1 end
-      r = trim(r)
-      if M.cmp(r, b) >= 0 then
-        r = M.sub(r, b)
-        q[i] = q[i] | (1 << bit)
-      end
+  local n = #b
+  -- Single-limb fast path (Knuth Exercise 16): when v fits in one limb,
+  -- just walk a from MSB to LSB carrying the partial remainder. ~2x
+  -- faster than a single Knuth-D pass.
+  if n == 1 then
+    local d = b[1]
+    local q, r = {}, 0
+    for i = #a, 1, -1 do
+      local cur = (r << 16) | a[i]
+      q[i] = cur // d
+      r    = cur %  d
     end
-    if i % 8 == 0 then yield_ish() end
+    return trim(q), { r }
   end
-  return trim(q), r
+
+  -- D1: normalize. d = floor(B / (v_{n-1} + 1)). Shift left by log2(d)
+  -- bits. Since v_{n-1} >= 1 we have d >= 1; we just want the high bit
+  -- of v_{n-1} set, so shift by (16 - bit-length(v_{n-1})).
+  local high = b[n]
+  local shift = 0
+  while ((high << shift) & 0x8000) == 0 do shift = shift + 1 end
+  local v = copy(b); shl_inplace(v, shift)
+  local u = copy(a); shl_inplace(u, shift)
+  if #u == #a then u[#u + 1] = 0 end                 -- ensure u has m+n+1 limbs
+
+  local m  = #u - n - 1                              -- 0-indexed top quotient digit
+  local q  = {}
+  local v_high = v[n]
+  local v_mid  = v[n - 1]
+  local B = LIMB
+
+  for j = m, 0, -1 do
+    -- D3: estimate qhat
+    local hi = u[j + n + 1] or 0
+    local mi = u[j + n]     or 0
+    local lo = u[j + n - 1] or 0
+    local qhat, rhat
+    if hi == v_high then
+      qhat = B - 1
+      rhat = mi + v_high
+    else
+      local two = (hi << 16) | mi
+      qhat = two // v_high
+      rhat = two %  v_high
+    end
+    -- Refine: qhat * v_mid > rhat * B + lo  ⇒ qhat too big
+    while qhat > 0 and (qhat * v_mid > (rhat << 16) + lo) do
+      qhat = qhat - 1
+      rhat = rhat + v_high
+      if rhat >= B then break end
+    end
+
+    -- D4: u[j..j+n] -= qhat * v
+    local borrow, carry = 0, 0
+    for i = 1, n do
+      local prod = qhat * v[i] + carry
+      carry = prod >> 16
+      local lim  = prod & LIMB_M1
+      local diff = u[j + i] - lim - borrow
+      if diff < 0 then diff = diff + B; borrow = 1 else borrow = 0 end
+      u[j + i] = diff
+    end
+    local diff = u[j + n + 1] - carry - borrow
+    if diff < 0 then
+      diff = diff + B
+      borrow = 1
+    else
+      borrow = 0
+    end
+    u[j + n + 1] = diff
+
+    -- D5/D6: if we went negative, qhat was one too large — add v back.
+    if borrow ~= 0 then
+      qhat = qhat - 1
+      local c = 0
+      for i = 1, n do
+        local s = u[j + i] + v[i] + c
+        u[j + i] = s & LIMB_M1
+        c = s >> 16
+      end
+      u[j + n + 1] = (u[j + n + 1] + c) & LIMB_M1
+    end
+
+    q[j + 1] = qhat
+    if (m - j) % 8 == 0 then yield_ish() end
+  end
+
+  -- D8: unnormalize remainder.
+  local r = {}
+  for i = 1, n do r[i] = u[i] end
+  shr_bit_inplace(r, shift)
+  return trim(q), trim(r)
 end
 
 function M.mod(a, m)

@@ -25,16 +25,23 @@ local OID = {
   rsa_pss               = "1.2.840.113549.1.1.10",
   ed25519               = "1.3.101.112",
   ec_public_key         = "1.2.840.10045.2.1",
+  ec_p256               = "1.2.840.10045.3.1.7",
+  ecdsa_sha256          = "1.2.840.10045.4.3.2",
+  ecdsa_sha384          = "1.2.840.10045.4.3.3",
+  ecdsa_sha512          = "1.2.840.10045.4.3.4",
   cn                    = "2.5.4.3",
   san                   = "2.5.29.17",
 }
 
 local SIG_ALG = {
-  [OID.sha256_rsa] = { kind = "rsa-pkcs1", hash = "sha256" },
-  [OID.sha384_rsa] = { kind = "rsa-pkcs1", hash = "sha384" },
-  [OID.sha512_rsa] = { kind = "rsa-pkcs1", hash = "sha512" },
-  [OID.rsa_pss]    = { kind = "rsa-pss",   hash = "sha256" },
-  [OID.ed25519]    = { kind = "ed25519" },
+  [OID.sha256_rsa]   = { kind = "rsa-pkcs1",  hash = "sha256" },
+  [OID.sha384_rsa]   = { kind = "rsa-pkcs1",  hash = "sha384" },
+  [OID.sha512_rsa]   = { kind = "rsa-pkcs1",  hash = "sha512" },
+  [OID.rsa_pss]      = { kind = "rsa-pss",    hash = "sha256" },
+  [OID.ed25519]      = { kind = "ed25519" },
+  [OID.ecdsa_sha256] = { kind = "ecdsa-p256", hash = "sha256" },
+  [OID.ecdsa_sha384] = { kind = "ecdsa-p256", hash = "sha384" },
+  [OID.ecdsa_sha512] = { kind = "ecdsa-p256", hash = "sha512" },
 }
 
 local function read_seq(s, off)
@@ -77,6 +84,28 @@ local function parse_ed25519_public_key(bitstring_body)
   return { kind = "ed25519", pub = payload }
 end
 
+local function parse_ec_public_key(alg_seq, bitstring_body)
+  -- AlgorithmIdentifier: SEQUENCE { OID 1.2.840.10045.2.1, parameters = OID curveID }
+  local oid_node    = asn1.read(alg_seq.body, 1)
+  local params_node = asn1.read(alg_seq.body, oid_node.next_off)
+  if params_node.tag ~= 0x06 then return { kind = "unsupported", oid = "ec-no-params" } end
+  local curve = asn1.oid_to_string(params_node.body)
+  if curve ~= OID.ec_p256 then
+    return { kind = "unsupported", oid = "ec-curve:" .. curve }
+  end
+  -- subjectPublicKey is a BIT STRING containing 0x04 || X || Y (uncompressed).
+  local _unused, payload = asn1.bitstring(bitstring_body)
+  if payload:byte(1) ~= 0x04 or #payload ~= 65 then
+    return { kind = "unsupported", oid = "ec-not-uncompressed" }
+  end
+  local bigint = require("lib.codec.bigint")
+  return {
+    kind = "ecdsa-p256",
+    x = bigint.from_bytes(payload:sub(2, 33)),
+    y = bigint.from_bytes(payload:sub(34, 65)),
+  }
+end
+
 local function parse_subject_public_key_info(spki_seq)
   local i = 1
   local alg_seq = asn1.read(spki_seq.body, i); i = alg_seq.next_off
@@ -87,6 +116,8 @@ local function parse_subject_public_key_info(spki_seq)
     return parse_rsa_public_key(key_bs.body)
   elseif oid == OID.ed25519 then
     return parse_ed25519_public_key(key_bs.body)
+  elseif oid == OID.ec_public_key then
+    return parse_ec_public_key(alg_seq, key_bs.body)
   end
   return { kind = "unsupported", oid = oid }
 end
