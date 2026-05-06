@@ -1,6 +1,6 @@
 return {
   files = {
-    { path = '/.ocos-version', size = 6, sha256 = 'b908034df92dbedd142741ee10b5da8ac50837c4994e15c0840b47b022e8e263' },
+    { path = '/.ocos-version', size = 6, sha256 = '8dc19b59c6f48b20d0e0a6c88776e3ba06ec397e58c41694a785ad610ba67df2' },
     { path = '/.prop', size = 57, sha256 = 'c2fd2b890293247b363b26c1c6f9c2717bd6f54af485e2953936d98219885e79' },
     { path = '/apps/desktop.app/Main.lua', size = 10349, sha256 = '56e65311ef33d9b4211591fc9cf0d2952a32ff8b74afa368c1d865c2feb28756' },
     { path = '/apps/desktop.app/manifest.cfg', size = 707, sha256 = '6956bc1cef06ce27d64bd151582b17fa70ea0c8d70df5071848f4e8916ceed5d' },
@@ -98,7 +98,7 @@ return {
     { path = '/etc/themes/default.lua', size = 1355, sha256 = 'f49ff5d1e1e9df344c7919b6dd31df2ce57c246681d8037f3908ceab4a183a82' },
     { path = '/etc/themes/light.lua', size = 884, sha256 = '0a405a8aac04e7a0126343459efc78579e6e54413da3c2c7a7a0f53cb1a644bb' },
     { path = '/init.lua', size = 907, sha256 = '57692224f1df735475fd591ba579f2a4f8cf8a5959c7f99874801ea76370ef96' },
-    { path = '/sys/boot.lua', size = 3625, sha256 = 'ce70271793790d52d4a85c57aa3ae96da0253388ceb6e2d7b0612e410102bae8' },
+    { path = '/sys/boot.lua', size = 3625, sha256 = 'e393d89cb1d93e8bd1d0e257f5edb8a077009c822368c020872ec37b31f752be' },
     { path = '/sys/diag/selftest.lua', size = 29871, sha256 = '40b610eebaef42f181014b56531affd40f740ded413d5f0de6789669c70850a5' },
     { path = '/sys/drv/data.lua', size = 3043, sha256 = '0113a624380e256046ed4136b6c994683949d7f8c8a0232d1c9cd62d16017a16' },
     { path = '/sys/drv/fs.lua', size = 1481, sha256 = '6619d468036b005529b21e5ed0da1f79f22e242e669f17bbdabdc99dbd022e3f' },
@@ -116,7 +116,7 @@ return {
     { path = '/sys/k/sched.lua', size = 9922, sha256 = '8b59615756b16e65910264c7f897ebcc33ccacb52a54f10efb1e133e46d7ee1a' },
     { path = '/sys/k/signal.lua', size = 1288, sha256 = 'a9991be2de140c50401911d0e6d3ad5a08d8a13c0c0154ad1954cc634fcda7a0' },
     { path = '/sys/k/vfs.lua', size = 10616, sha256 = 'ce4170df940e72186f19f8478bd2e58c9ced96257571dfeed8dbe3619729e49d' },
-    { path = '/sys/lib/auth/audit.lua', size = 1286, sha256 = '1946acf3e865110777aebd516bf3bd896f012781a8f1249cc051535e2743d7fb' },
+    { path = '/sys/lib/auth/audit.lua', size = 2899, sha256 = 'd638399b7a23528dd53dfd4d07c39d47333f3237f8dd5e3bd6c48d01b5633430' },
     { path = '/sys/lib/auth/users.lua', size = 8848, sha256 = 'c7985e9adb6727f26dc03e9e4ea5bca20eba3dd939cc5d8b2288e75d49abdac0' },
     { path = '/sys/lib/codec/asn1.lua', size = 4634, sha256 = 'e8abd81e2fbba6421717517fce45f64f2fa12281fab787873bc3f4435f47ba3d' },
     { path = '/sys/lib/codec/bigint.lua', size = 5941, sha256 = '97ffca9c46d816beda4a9ebc3d558daf46ca6636b3f52614074765704963d3b9' },
