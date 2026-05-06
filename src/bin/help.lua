@@ -32,7 +32,8 @@ local sections = {
     { "svc list", "svc status <id>", "svc start <id>", "svc stop <id>" }
   },
   { "Users / security",
-    { "whoami", "login", "useradd <name>", "userdel <name>",
+    { "whoami", "login", "setup-root", "useradd [--admin] <name>",
+      "userdel [-r] <name>", "usermod {--admin|--no-admin} <name>",
       "passwd [user]", "sudo <cmd>" }
   },
   { "Packages",

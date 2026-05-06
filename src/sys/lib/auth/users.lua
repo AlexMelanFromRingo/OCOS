@@ -202,6 +202,23 @@ function M.verify(name, password)
   return pbkdf2.verify(password, rec.salt, rec.iters, rec.pbkdf2)
 end
 
+-- Replace the cap-set on an existing account in-place. Used by the
+-- usermod CLI to promote / demote users without recreating them. The
+-- caller is expected to be admin (cap.enforce=true denies the write
+-- anyway since the path lives under /etc).
+function M.set_caps(name, caps)
+  local db, path = load_db()
+  if not db[name] then return nil, "no such user" end
+  db[name].caps = caps
+  local ok, err = save_db(db, path)
+  if ok then
+    pcall(require("lib.auth.audit").write,
+      { kind = "user.caps", user = name, target = path,
+        detail = "caps=" .. table.concat(caps, ",") })
+  end
+  return ok, err
+end
+
 function M.set_password(name, password, opts)
   opts = opts or {}
   local db, path = load_db()

@@ -211,4 +211,25 @@ function M.base(scalar)
     "\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")
 end
 
+-- Expose the field primitives so ed25519.lua can reuse them without
+-- duplicating ~80 lines of carry / multiply code. The contract is:
+-- 16-limb signed-int arrays at radix 2^16, semantics matching
+-- TweetNaCl. Public callers should still go through M.scalarmult /
+-- M.base — these are internal helpers.
+M._fe = {
+  zero       = fe_zero,
+  one        = fe_one,
+  copy       = fe_copy,
+  add        = fe_add,
+  sub        = fe_sub,
+  mul        = fe_mul,
+  sq         = fe_sq,
+  carry      = fe_carry,
+  cswap      = fe_cswap,
+  invert     = fe_invert,
+  from_bytes = fe_from_bytes,
+  to_bytes   = fe_to_bytes,
+  ashr16     = ashr16,
+}
+
 return M

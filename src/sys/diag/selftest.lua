@@ -290,6 +290,22 @@ function M.run()
       "X25519 base*9 mismatch")
   end)
 
+  check("Ed25519 RFC 8032 vectors", function()
+    local ed = require("lib.codec.ed25519")
+    local function bin(s) return (s:gsub("..", function(c) return string.char(tonumber(c, 16)) end)) end
+    local function bh(s)  return (s:gsub(".",  function(c) return string.format("%02x", c:byte()) end)) end
+    -- §7.1 test 1: empty message
+    local secret = bin("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
+    local pub    = bin("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a")
+    local sig    = bin("e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b")
+    assert(ed.public_key(secret) == pub, "Ed25519 public_key mismatch")
+    assert(ed.sign(secret, "")    == sig, "Ed25519 sign mismatch")
+    assert(ed.verify(pub, "", sig) == true, "Ed25519 verify rejected good sig")
+    -- Tampered signature must be rejected.
+    local bad = "\1" .. sig:sub(2)
+    assert(ed.verify(pub, "", bad) == false, "Ed25519 verify accepted tampered sig")
+  end)
+
   check("ui buffer + flush", function()
     local Buffer = require("lib.ui.buffer")
     local fake_ops = {}

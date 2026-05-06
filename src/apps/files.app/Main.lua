@@ -30,16 +30,24 @@ if not vfs.isdir(cwd) then cwd = "/" end
 
 -- ---- helpers -----------------------------------------------------------
 
+-- Classify a path for icon + colour + handler routing. Glyphs are
+-- ASCII-friendly: the OC font ships a small subset of unicode, and the
+-- 4-byte emoji we used earlier render as garbage on a real screen.
 local function classify(full, name)
-  if vfs.isdir(full) then return "dir", "📁", 0x4FA0F0 end
+  if vfs.isdir(full) then return "dir", "/", 0x4FA0F0 end
   local ext = name:match("%.([^.]+)$")
   ext = ext and ext:lower()
-  if ext == "lua" then return "lua",   "📄", 0x66DD66 end
-  if ext == "txt" or ext == "md" then return "text", "📄", 0xCCCCCC end
-  if ext == "cfg" or ext == "ini" or ext == "toml" then return "cfg", "⚙", 0xE0C040 end
-  if ext == "png" or ext == "ocif" or ext == "ocbm" then return "img", "🖼", 0xCC66CC end
-  if ext == "ocpkg" or ext == "tar" then return "pkg", "📦", 0xE05050 end
-  return "file", "📄", 0xCCCCCC
+  if ext == "lua" then return "lua",   "L", 0x66DD66 end
+  if ext == "txt" or ext == "md" or ext == "log" or ext == "trace" then
+    return "text", "T", 0xCCCCCC
+  end
+  if ext == "cfg" or ext == "ini" or ext == "toml" then return "cfg", "C", 0xE0C040 end
+  if ext == "png" or ext == "ocif" or ext == "ocbm" then return "img", "P", 0xCC66CC end
+  if ext == "ocpkg" or ext == "tar" then return "pkg", "K", 0xE05050 end
+  -- Files without a recognised extension are still text by default —
+  -- README, MAKEFILE, .profile, etc. all open in the editor.
+  if not ext then return "text", "T", 0xCCCCCC end
+  return "file", ".", 0xCCCCCC
 end
 
 local function fmt_size(bytes)
@@ -121,20 +129,20 @@ local statusbar = widget.new("statusbar", {
   end,
 })
 
--- Mount table → "places" entries. Recomputed on each cwd change so a
--- newly mounted disk shows up without re-launching the app.
+-- Mount table → "places" entries. ASCII glyphs only so the sidebar
+-- reads the same on every machine; recomputed on each cwd change so a
+-- newly mounted disk shows up without relaunching the app.
 local function place_items()
   local home = (env and env.HOME) or "/home"
   local out = {
-    { label = "🏠  Home",     path = home    },
-    { label = "🖥  Desktop",  path = home .. "/Desktop" },
-    { label = "/  Root",      path = "/"     },
-    { label = "──", separator = true },
+    { label = "Home",       path = home    },
+    { label = "Desktop",    path = home .. "/Desktop" },
+    { label = "Root /",     path = "/"     },
   }
   for _, m in ipairs(vfs.mounts()) do
     if m.prefix:sub(1, 5) == "/mnt/" then
       local short = m.prefix:sub(6, 13)
-      out[#out + 1] = { label = "💾  " .. short, path = m.prefix }
+      out[#out + 1] = { label = "fs " .. short, path = m.prefix }
     end
   end
   return out
@@ -165,6 +173,9 @@ local function activate(item)
   local full = item.full
   if not full then return end
   if item.kind == "dir" then set_cwd(full); return end
+  -- Anything text-shaped opens in the editor; binary blobs (img, pkg,
+  -- unknown) get a notify rather than a crash from feeding non-text
+  -- bytes to a textarea.
   if item.kind == "lua" or item.kind == "text" or item.kind == "cfg" then
     local edit = "/apps/edit.app/Main.lua"
     if vfs.exists(edit) then
@@ -182,7 +193,7 @@ places_lst = list_w({
   items = place_items(), width = 16, height = 16,
   format = function(it) return it.label end,
   on_select = function(_, item)
-    if not item.separator and item.path then set_cwd(item.path) end
+    if item and item.path then set_cwd(item.path) end
   end,
 })
 

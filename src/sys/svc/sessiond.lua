@@ -120,6 +120,11 @@ while not stopping do
   local rec, name
   if users.empty() then
     rec, name = { home = "/home", caps = { "*" } }, "root"
+    console.set_fg(0xE0A040)
+    console.writeln("first boot: no users yet — dropping to root")
+    console.writeln("           run `setup-root` to set the root password")
+    console.writeln("           and switch on capability enforcement")
+    console.set_fg(0xCCCCCC)
     trace("users empty, dropping to root")
   elseif not users.has_admin() then
     -- Rescue path: /etc/passwd has only limited users (somebody ran
