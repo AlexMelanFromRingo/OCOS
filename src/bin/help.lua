@@ -43,7 +43,9 @@ local sections = {
       "pkg registry remove <name>" }
   },
   { "Network",
-    { "wget [-q] [-O <file>] <url>" }
+    { "wget [-q] [-O <file>] <url>",
+      "curl [-X method] [-H 'K: V'] [-d body] [-o file] [-L] <url>",
+      "git clone [-b <branch>] <github-url> [<dest>]" }
   },
   { "Documentation",
     { "help [--plain]", "man <name>", "less [file]", "more [file]" }

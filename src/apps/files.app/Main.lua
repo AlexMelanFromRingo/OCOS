@@ -33,21 +33,25 @@ if not vfs.isdir(cwd) then cwd = "/" end
 -- Classify a path for icon + colour + handler routing. Glyphs are
 -- ASCII-friendly: the OC font ships a small subset of unicode, and the
 -- 4-byte emoji we used earlier render as garbage on a real screen.
+-- Default to "text" for anything that isn't an obvious binary blob —
+-- shell history files (.sh_history), traces, READMEs etc. should all
+-- open in the editor instead of throwing "no handler".
+local KNOWN_BINARY = {
+  png = true, ocif = true, ocbm = true, jpg = true, jpeg = true, gif = true,
+  ocpkg = true, tar = true, zip = true, gz = true, bin = true, eep = true,
+}
 local function classify(full, name)
   if vfs.isdir(full) then return "dir", "/", 0x4FA0F0 end
   local ext = name:match("%.([^.]+)$")
   ext = ext and ext:lower()
   if ext == "lua" then return "lua",   "L", 0x66DD66 end
-  if ext == "txt" or ext == "md" or ext == "log" or ext == "trace" then
-    return "text", "T", 0xCCCCCC
-  end
   if ext == "cfg" or ext == "ini" or ext == "toml" then return "cfg", "C", 0xE0C040 end
   if ext == "png" or ext == "ocif" or ext == "ocbm" then return "img", "P", 0xCC66CC end
-  if ext == "ocpkg" or ext == "tar" then return "pkg", "K", 0xE05050 end
-  -- Files without a recognised extension are still text by default —
-  -- README, MAKEFILE, .profile, etc. all open in the editor.
-  if not ext then return "text", "T", 0xCCCCCC end
-  return "file", ".", 0xCCCCCC
+  if ext == "ocpkg" or ext == "tar" or ext == "zip" then return "pkg", "K", 0xE05050 end
+  if ext and KNOWN_BINARY[ext] then return "file", ".", 0xCCCCCC end
+  -- Everything else (txt, md, log, trace, sh_history, history,
+  -- conf, profile, no-extension files) is text-shaped → editor.
+  return "text", "T", 0xCCCCCC
 end
 
 local function fmt_size(bytes)

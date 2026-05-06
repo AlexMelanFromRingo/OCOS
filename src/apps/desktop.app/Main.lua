@@ -7,6 +7,7 @@ local sched = require("k.sched")
 local vfs   = require("k.vfs")
 local ipc   = require("k.ipc")
 local lang  = require("lib.lang")
+local utf8u = require("lib.codec.utf8")
 local widget = ui.widget
 local label  = ui.widgets.label
 local clock  = require("lib.ui.widgets.clock")
@@ -156,10 +157,14 @@ local status_bar = widget.new("status-bar", {
   draw = function(self, buffer, t)
     local b = self.bounds
     buffer:fill(b.x, b.y, b.w, b.h, " ", SB_FG, SB_BG)
-    -- Brand pill (accent bg).
+    -- Brand pill (accent bg). Glyph-iterate so cyrillic localized
+    -- "польз.:" doesn't shred across cells.
     local brand = " " .. (_OSVERSION or "OCOS") .. "  " .. lang.t("bar.user") .. USER .. " "
-    for i = 1, math.min(#brand, b.w - 12) do
-      buffer:set(b.x + i - 1, b.y, brand:sub(i, i), 0xFFFFFF, t.palette.accent or 0x4F8AF0)
+    local i = 0
+    for g in utf8u.each(brand) do
+      if i >= b.w - 12 then break end
+      buffer:set(b.x + i, b.y, g, 0xFFFFFF, t.palette.accent or 0x4F8AF0)
+      i = i + 1
     end
     for _, c in ipairs(self.children) do c:draw(buffer, t) end
     self.dirty = false

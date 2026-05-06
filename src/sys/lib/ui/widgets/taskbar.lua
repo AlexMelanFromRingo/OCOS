@@ -8,6 +8,7 @@
 
 local widget = require("lib.ui.widget")
 local lang   = require("lib.lang")
+local utf8u  = require("lib.codec.utf8")
 
 local vfs_for_time = require("k.vfs")
 local function clock_text()
@@ -42,14 +43,25 @@ return function(props)
       local acc = theme.palette.accent or 0x4F8AF0
       buf:fill(b.x, b.y, b.w, b.h, " ", TB_FG, TB_BG)
 
+      -- Paint a string as one cell per glyph; multi-byte chars (like
+      -- the cyrillic in localized labels) used to corrupt the chip
+      -- cells when iterated byte-by-byte.
+      local function paint(x0, str, fg, bg)
+        local i = 0
+        for g in utf8u.each(str) do
+          buf:set(x0 + i, b.y, g, fg, bg); i = i + 1
+        end
+        return i                                     -- glyphs painted
+      end
+
       -- Launcher pill (green) at the very left.
       local lab = " " .. lang.t("bar.apps") .. " "
-      for i = 1, #lab do buf:set(b.x + i, b.y, lab:sub(i, i), 0xFFFFFF, 0x4CAF50) end
-      self.chips = { { x1 = b.x + 1, x2 = b.x + #lab, kind = "launcher" } }
-      local x = b.x + #lab + 2
+      local lab_w = paint(b.x + 1, lab, 0xFFFFFF, 0x4CAF50)
+      self.chips = { { x1 = b.x + 1, x2 = b.x + lab_w, kind = "launcher" } }
+      local x = b.x + lab_w + 2
 
-      -- Open-window chips
-      local right_reserve = 18   -- room for "  user 14:32  POWR"
+      -- Open-window chips. Right-reserve room for "  user 14:32  POWR".
+      local right_reserve = 18
       local list = self.props.wm and self.props.wm:windows_for_taskbar() or {}
       for _, w in ipairs(list) do
         -- Strip any " - <path>" suffix the app baked into its title:
@@ -58,29 +70,28 @@ return function(props)
         local label = w.title or "Window"
         local sep = label:find(" %- ")
         if sep then label = label:sub(1, sep - 1) end
-        if #label > 12 then label = label:sub(1, 11) .. "…" end
+        if utf8u.len(label) > 12 then label = utf8u.sub(label, 1, 11) .. "…" end
         local marker = w.minimised and "_" or (w.focused and ">" or " ")
         local chip = " " .. marker .. label .. " "
-        if x + #chip > b.x + b.w - right_reserve then break end
+        local chip_w = utf8u.len(chip)
+        if x + chip_w > b.x + b.w - right_reserve then break end
         local chip_fg = w.focused and 0xFFFFFF or TB_FG
         local chip_bg = w.focused and acc or 0x2A3340
-        for i = 1, #chip do buf:set(x + i - 1, b.y, chip:sub(i, i), chip_fg, chip_bg) end
-        self.chips[#self.chips + 1] = { x1 = x, x2 = x + #chip - 1, kind = "win", win = w.win }
-        x = x + #chip + 1
+        paint(x, chip, chip_fg, chip_bg)
+        self.chips[#self.chips + 1] = { x1 = x, x2 = x + chip_w - 1, kind = "win", win = w.win }
+        x = x + chip_w + 1
       end
 
       -- Right side: user, clock, power pill (red).
       local user_clock = " " .. (self.props.user or "root") .. "  " .. clock_text() .. " "
-      local pwr  = " " .. lang.t("bar.power") .. " "
-      local px   = b.x + b.w - #pwr
-      local ucx  = px - #user_clock
-      for i = 1, #user_clock do
-        buf:set(ucx + i - 1, b.y, user_clock:sub(i, i), TB_FG, TB_BG)
-      end
-      for i = 1, #pwr do
-        buf:set(px + i - 1, b.y, pwr:sub(i, i), 0xFFFFFF, 0xCC4444)
-      end
-      self.chips[#self.chips + 1] = { x1 = px, x2 = px + #pwr - 1, kind = "power" }
+      local pwr        = " " .. lang.t("bar.power") .. " "
+      local pwr_w      = utf8u.len(pwr)
+      local uc_w       = utf8u.len(user_clock)
+      local px         = b.x + b.w - pwr_w
+      local ucx        = px - uc_w
+      paint(ucx, user_clock, TB_FG, TB_BG)
+      paint(px,  pwr,        0xFFFFFF, 0xCC4444)
+      self.chips[#self.chips + 1] = { x1 = px, x2 = px + pwr_w - 1, kind = "power" }
       self.dirty = false
     end,
 

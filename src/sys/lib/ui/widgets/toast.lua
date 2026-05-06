@@ -9,6 +9,7 @@
 local widget = require("lib.ui.widget")
 local ipc    = require("k.ipc")
 local sched  = require("k.sched")
+local utf8u  = require("lib.codec.utf8")
 
 local DEFAULT_DURATION = 4
 
@@ -38,12 +39,18 @@ return function(props)
           warn  = 0xFFCC66,
           error = 0xFF6666,
         })[item.level or "info"] or 0x4FA0F0
+        -- Glyph-aware wrapping so cyrillic-bodied notifications wrap at
+        -- the visible cell boundary instead of mid-codepoint.
         local body_lines = {}
-        local body = item.body or ""
-        while #body > 0 do
-          local chunk = body:sub(1, w - 4)
-          body_lines[#body_lines + 1] = chunk
-          body = body:sub(#chunk + 1)
+        do
+          local body = item.body or ""
+          local glyphs = utf8u.chars(body)
+          local i, n = 1, #glyphs
+          while i <= n do
+            local last = math.min(i + (w - 4) - 1, n)
+            body_lines[#body_lines + 1] = table.concat(glyphs, "", i, last)
+            i = last + 1
+          end
         end
         local h = 2 + #body_lines
         if y + h > b.y + b.h then break end
@@ -65,16 +72,20 @@ return function(props)
         buf:set(x,         y + h - 1, "└", level_fg, 0x1F2933)
         buf:set(x + w - 1, y + h - 1, "┘", level_fg, 0x1F2933)
 
-        -- Title
+        -- Title (glyph-iterate; clamp at w-4 cells, trail with "…").
         local title = item.title or "Notice"
-        if #title > w - 4 then title = title:sub(1, w - 5) .. "…" end
-        for i = 1, #title do
-          buf:set(x + 1 + i, y, title:sub(i, i), level_fg, 0x1F2933)
+        if utf8u.len(title) > w - 4 then title = utf8u.sub(title, 1, w - 5) .. "…" end
+        do
+          local col = 0
+          for g in utf8u.each(title) do
+            buf:set(x + 1 + col + 1, y, g, level_fg, 0x1F2933); col = col + 1
+          end
         end
         -- Body
-        for i, ln in ipairs(body_lines) do
-          for j = 1, #ln do
-            buf:set(x + 1 + j, y + i, ln:sub(j, j), 0xCCCCCC, 0x1F2933)
+        for li, ln in ipairs(body_lines) do
+          local col = 0
+          for g in utf8u.each(ln) do
+            buf:set(x + 1 + col + 1, y + li, g, 0xCCCCCC, 0x1F2933); col = col + 1
           end
         end
 

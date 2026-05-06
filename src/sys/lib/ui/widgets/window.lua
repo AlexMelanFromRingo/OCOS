@@ -8,12 +8,13 @@
 --   on_close, on_min, on_max, on_focus, on_drag_start
 
 local widget = require("lib.ui.widget")
+local utf8u  = require("lib.codec.utf8")
 
 local function clamp_title(t, w)
   t = t or ""
-  if #t <= w then return t end
+  if utf8u.len(t) <= w then return t end
   if w <= 1 then return "…" end
-  return t:sub(1, w - 1) .. "…"
+  return utf8u.sub(t, 1, w - 1) .. "…"
 end
 
 return function(props)
@@ -64,8 +65,9 @@ return function(props)
       if self.props.maximisable ~= false then btn_count = btn_count + 1 end
       if self.props.minimisable ~= false then btn_count = btn_count + 1 end
       local title = clamp_title(self.props.title, math.max(0, b.w - 4 - btn_count * 2))
-      for i = 1, #title do
-        buffer:set(b.x + 1 + i, b.y, title:sub(i, i), title_fg, title_bg)
+      local col = 0
+      for g in utf8u.each(title) do
+        buffer:set(b.x + 1 + col + 1, b.y, g, title_fg, title_bg); col = col + 1
       end
 
       -- Use ASCII-only glyphs in the title bar — the OC font doesn't
