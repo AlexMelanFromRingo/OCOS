@@ -93,8 +93,14 @@ local picker = widget.new("login", {
       local fg = (i == sel) and 0xFFFFFF or 0xAAAAAA
       local bg = (i == sel) and (theme.palette.accent or 0x4FA0F0) or 0x222222
       buf:fill(x, sy, card_w, card_h, " ", fg, bg)
-      -- Avatar bullet
-      buf:set(x + card_w // 2 - 1, sy + 1, "👤", fg, bg)
+      -- Avatar bullet (ASCII square brackets — the OC font renders the
+      -- 4-byte 👤 emoji as a 2-cell glyph in some configs and our buffer
+      -- only invalidates one cell of it on tab, so the leftover half
+      -- shows up as the "notch" sticking out of the alex card).
+      local av = "(o)"
+      for j = 1, #av do
+        buf:set(x + (card_w - #av) // 2 + j - 1, sy + 1, av:sub(j, j), fg, bg)
+      end
       -- Name
       local nm = name
       if #nm > card_w - 2 then nm = nm:sub(1, card_w - 3) .. "…" end
