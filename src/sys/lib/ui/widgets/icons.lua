@@ -9,6 +9,7 @@
 local widget = require("lib.ui.widget")
 local vfs    = require("k.vfs")
 local ipc    = require("k.ipc")
+local sched  = require("k.sched")
 
 local TILE_W, TILE_H = 12, 4
 
@@ -54,9 +55,17 @@ return function(props)
         local kind, glyph, fg = classify(full, clean)
         out[#out + 1] = { name = clean, path = full, kind = kind, glyph = glyph, fg = fg }
       end
-      self.state.entries = out
-      self.state.page = 0
-      self:invalidate()
+      -- Compute a fingerprint so we only invalidate when the tile set
+      -- actually changed. Avoids redrawing the whole desktop every two
+      -- seconds for nothing.
+      local sig = #out .. ":"
+      for i = 1, #out do sig = sig .. out[i].name .. "/" end
+      if sig ~= self.state.signature then
+        self.state.signature = sig
+        self.state.entries   = out
+        if self.state.page * 999 > #out then self.state.page = 0 end
+        self:invalidate()
+      end
     end,
 
     measure = function(_, mw, mh) return mw, mh end,
@@ -144,5 +153,21 @@ return function(props)
   }, props or {})
 
   W:refresh()
+
+  -- Poll the desktop directory every 2 s so files created from a
+  -- terminal (`mkdir Desktop/foo`) appear without forcing the user to
+  -- restart the GUI. The fingerprint check inside refresh makes the
+  -- no-op case cheap. Loop ends when session.on_teardown is called.
+  local alive = true
+  if props and props.session and props.session.on_teardown then
+    props.session.on_teardown(function() alive = false end)
+  end
+  sched.spawn(function()
+    while alive do
+      sched.sleep(2)
+      if alive then pcall(W.refresh, W) end
+    end
+  end, { name = "icons-poll", caps = { "*" } })
+
   return W
 end
