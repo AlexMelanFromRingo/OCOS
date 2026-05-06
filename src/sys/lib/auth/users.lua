@@ -17,28 +17,46 @@ local PASSWD_PATH  = "/etc/passwd"
 local DEFAULT_ITERS = 5000                        -- ~250 ms on T3 Lua 5.3
 
 local function find_passwd_path()
-  -- Existing /etc/passwd wins, regardless of which fs holds it.
+  -- The picker has to avoid tmpfs — it's RAM-backed and doesn't
+  -- survive a Minecraft restart, which would silently lose every
+  -- account the user created. Order of preference:
+  --   1. existing /etc/passwd anywhere persistent
+  --   2. boot fs if it's writable (production install)
+  --   3. any non-tmpfs /mnt/<addr> (OCVM dev with two real disks)
+  --   4. tmpfs as a last resort with a warning written to k.log
+  local tmp_addr = computer.tmpAddress and computer.tmpAddress()
+
   if vfs.exists(PASSWD_PATH) then return PASSWD_PATH end
   for _, m in ipairs(vfs.mounts()) do
-    if m.prefix:sub(1, 5) == "/mnt/" then
+    if m.prefix:sub(1, 5) == "/mnt/" and m.address ~= tmp_addr then
       local p = m.prefix .. "/etc/passwd"
       if vfs.exists(p) then return p end
     end
   end
-  -- No existing record. Pick a writable target. Prefer a /mnt/<addr>
-  -- mount when present (covers the OCVM dev setup whose boot fs is
-  -- read-only); otherwise create the file on the boot fs (the
-  -- single-disk production install — without this fallback the
-  -- function returned nil and useradd silently failed because
-  -- save_db got a nil path).
+
+  local boot = _OCOS and _OCOS.boot_addr and component.proxy(_OCOS.boot_addr)
+  if boot and boot.isReadOnly and not boot.isReadOnly() then
+    pcall(vfs.mkdir, "/etc")
+    return PASSWD_PATH
+  end
+
   for _, m in ipairs(vfs.mounts()) do
-    if m.prefix:sub(1, 5) == "/mnt/" then
+    if m.prefix:sub(1, 5) == "/mnt/" and m.address ~= tmp_addr then
       pcall(vfs.mkdir, m.prefix .. "/etc")
       return m.prefix .. "/etc/passwd"
     end
   end
-  pcall(vfs.mkdir, "/etc")
-  return PASSWD_PATH
+
+  -- Tmpfs only as a last resort. Note it loudly so a future post-mortem
+  -- has a paper trail.
+  for _, m in ipairs(vfs.mounts()) do
+    if m.prefix:sub(1, 5) == "/mnt/" then
+      pcall(require("k.log").warn, "users",
+        "/etc/passwd is on tmpfs — accounts will be lost on MC restart")
+      pcall(vfs.mkdir, m.prefix .. "/etc")
+      return m.prefix .. "/etc/passwd"
+    end
+  end
 end
 
 local function rand_hex(n)
