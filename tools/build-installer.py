@@ -39,6 +39,7 @@ INSTALLER_SOURCE = r"""-- OCOS streaming installer.
 --   /tmp/ocos.lua 88895671 https://my.fork   -- target + custom base URL
 --   /tmp/ocos.lua --local /mnt/loot          -- read files from a local mount instead of HTTP
 --   /tmp/ocos.lua --no-flash-eeprom           -- skip flashing the EEPROM (default IS to flash)
+--   /tmp/ocos.lua --no-setup-root              -- skip the first-boot root-password prompt
 
 local args = { ... }
 
@@ -53,7 +54,7 @@ local function ok(s)     io.write("[ok] " .. s .. "\n") end
 
 -- ---- arg parsing -------------------------------------------------------
 
-local target_prefix, base_url, local_root, flash_eeprom, non_interactive
+local target_prefix, base_url, local_root, flash_eeprom, non_interactive, skip_setup_root
 do
   local i = 1
   while i <= #args do
@@ -70,9 +71,13 @@ do
       flash_eeprom = false
       non_interactive = true
       i = i + 1
+    elseif a == "--no-setup-root" then
+      skip_setup_root = true
+      i = i + 1
     elseif a == "-y" or a == "--yes" then
       non_interactive = true
       flash_eeprom = (flash_eeprom == nil) and true or flash_eeprom
+      skip_setup_root = (skip_setup_root == nil) and true or skip_setup_root
       i = i + 1
     elseif a:match("^https?://") then
       base_url = a
@@ -310,6 +315,157 @@ end
 if computer.setBootAddress then
   computer.setBootAddress(target_addr)
   ok("set boot address to " .. target_addr:sub(1, 8))
+end
+
+-- ---- first-boot setup: root password + cap.enforce flip --------------
+--
+-- After a fresh install /etc/passwd is empty, so OCOS sessiond drops
+-- straight to a passwordless root and runs with enforce=false. The
+-- in-OS `setup-root` command can fix this on first boot, but the
+-- friendlier path is to do it right here while we're already prompting
+-- the user. We load the freshly-written sha256 / hmac / pbkdf2 modules
+-- off the target disk, hash the chosen password, and write /etc/passwd
+-- + /etc/security.cfg before the reboot.
+local function read_target_file(path)
+  local h, oerr = invoke(target_addr, "open", path, "r")
+  if not h then return nil, oerr end
+  local parts = {}
+  while true do
+    local chunk, rerr = invoke(target_addr, "read", h, 4096)
+    if chunk == nil then if rerr then invoke(target_addr, "close", h); return nil, rerr end; break end
+    if chunk == "" then break end
+    parts[#parts + 1] = chunk
+  end
+  invoke(target_addr, "close", h)
+  return table.concat(parts)
+end
+
+local function write_target_file(path, content)
+  return write_file(target_addr, path, content)
+end
+
+local function masked_read()
+  -- OpenOS's term.read({pwchar="*"}) handles the masking nicely if
+  -- available; otherwise fall back to plain io.read (visible).
+  local term_ok, term = pcall(require, "term")
+  if term_ok and term and term.read then
+    local s = term.read(nil, false, nil, "*")
+    if s then s = s:gsub("\n$", "") end
+    return s
+  end
+  return io.read()
+end
+
+local function require_from_target()
+  -- Build a tiny require that resolves modules off the target disk.
+  -- Only used to pull in the lib.codec.* chain; nothing else is loaded.
+  local cache = {}
+  local function resolve(name)
+    if cache[name] then return cache[name] end
+    local rel = "/sys/" .. name:gsub("%.", "/") .. ".lua"
+    local src, ferr = read_target_file(rel)
+    if not src then error("require " .. name .. ": " .. tostring(ferr)) end
+    -- The chunk env exposes `require` (recurse) plus the host globals
+    -- the codec modules touch (string, math, bit ops, component for the
+    -- data-card fast path in sha256).
+    local env = setmetatable({}, { __index = _G })
+    env.require = resolve
+    local chunk, cerr = load(src, "=" .. rel, "t", env)
+    if not chunk then error("load " .. name .. ": " .. tostring(cerr)) end
+    local res = chunk()
+    cache[name] = res
+    return res
+  end
+  return resolve
+end
+
+local want_setup = (not skip_setup_root)
+if not non_interactive and want_setup then
+  io.write("\n")
+  want_setup = prompt("Set up root password now? (otherwise run `setup-root` after boot)", true)
+end
+
+if want_setup and not skip_setup_root then
+  local p1, p2
+  while true do
+    io.write("root password (>= 6 chars): "); p1 = masked_read()
+    if not p1 then io.write("\n"); want_setup = false; break end
+    io.write("\nretype:                       "); p2 = masked_read()
+    io.write("\n")
+    if not p2 then want_setup = false; break end
+    if p1 ~= p2 then eprint("passwords don't match — try again"); p1 = nil
+    elseif #p1 < 6 then eprint("too short — at least 6 characters"); p1 = nil
+    else break end
+  end
+
+  if p1 and want_setup then
+    local req_ok, req_err = pcall(require_from_target)
+    if req_ok then
+      local resolve = req_err
+      local pbkdf2 = resolve("lib.codec.pbkdf2")
+      local sha    = resolve("lib.codec.sha256")
+      -- Generate a 16-byte salt. Prefer the data card's hardware RNG
+      -- when present; otherwise fall back to a sha256 of uptime + a
+      -- few component addresses, which is enough entropy for an
+      -- install-time secret.
+      local salt_hex
+      do
+        local data
+        local data_addr = component.list("data")()
+        if data_addr then
+          local rok, raw = pcall(invoke, data_addr, "random", 16)
+          if rok and raw then data = raw end
+        end
+        if not data then
+          local seed = tostring(computer.uptime()) .. tostring(target_addr)
+          for a in component.list() do seed = seed .. a end
+          data = sha.bytes(seed):sub(1, 16)
+        end
+        salt_hex = (data:gsub(".", function(c) return string.format("%02x", c:byte()) end))
+      end
+
+      io.write("hashing... ")
+      local hex = pbkdf2.derive(p1, salt_hex, 5000)
+      io.write("done\n")
+
+      -- Write /etc/passwd: just the root entry, formatted exactly the
+      -- way users.lua's save_db emits it so the on-disk syntax stays
+      -- canonical.
+      local passwd = table.concat({
+        "return {",
+        string.format(
+          "  [%q] = { uid=0, gid=0, salt=%q, pbkdf2=%q, iters=5000, home=%q, shell=%q, caps={%q} },",
+          "root", salt_hex, hex, "/root", "/bin/sh.lua", "*"),
+        "}",
+        "",
+      }, "\n")
+      local pwd_ok, pwd_err = write_target_file("/etc/passwd", passwd)
+      if not pwd_ok then
+        eprint("install: writing /etc/passwd failed: " .. tostring(pwd_err))
+      else
+        ok("wrote /etc/passwd (root account, admin caps)")
+        local sec = table.concat({
+          "-- /etc/security.cfg — kernel security policy.",
+          "-- Set up by the installer. Edit if you need a recovery boot",
+          "-- (enforce=false) — but then anyone with shell access can",
+          "-- bypass cap.check.",
+          "return {",
+          "  enforce = true,",
+          "  default_user = \"root\",",
+          "}",
+          "",
+        }, "\n")
+        local sec_ok, sec_err = write_target_file("/etc/security.cfg", sec)
+        if sec_ok then
+          ok("flipped /etc/security.cfg → enforce=true")
+        else
+          eprint("install: writing /etc/security.cfg failed: " .. tostring(sec_err))
+        end
+      end
+    else
+      eprint("install: setup-root: " .. tostring(req_err))
+    end
+  end
 end
 
 -- Optional EEPROM flash. We pull the minified BIOS source (whose path the
