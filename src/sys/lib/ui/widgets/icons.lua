@@ -63,7 +63,9 @@ return function(props)
 
     draw = function(self, buf, theme)
       local b = self.bounds
-      buf:fill(b.x, b.y, b.w, b.h, " ", theme.palette.fg, theme.palette.bg)
+      -- Intentionally do NOT fill our own bounds — the wallpaper sits
+      -- directly behind us and we want it to show through the gaps
+      -- between tiles. Each tile cell still gets explicit colours below.
 
       local cols = math.max(1, b.w // TILE_W)
       local rows = math.max(1, b.h // TILE_H)

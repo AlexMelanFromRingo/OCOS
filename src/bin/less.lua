@@ -20,4 +20,4 @@ end
 
 local input, title = read_input()
 if input == nil then return 1 end
-return pager.show(input, { title = title, always = true })
+return pager.show(input, { title = title, always = true, io = io })

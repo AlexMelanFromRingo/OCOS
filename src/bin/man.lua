@@ -73,4 +73,4 @@ local path, sec = find_page(name, section)
 if not path then err("no manual entry for " .. name); return 1 end
 
 local body = vfs.read_all(path) or ""
-return pager.show(body, { title = string.format("%s(%s)", name, sec), always = true })
+return pager.show(body, { title = string.format("%s(%s)", name, sec), always = true, io = io })

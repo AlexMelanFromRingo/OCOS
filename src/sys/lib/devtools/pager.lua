@@ -35,7 +35,12 @@ function M.show(text, opts)
   -- that would land the page outside the terminal window. Just dump
   -- text to stdout and let the host scroll. The TTY path keeps the
   -- interactive `q / j / k / Space` viewer.
-  local out = io.output and io.output() or nil
+  --
+  -- The per-process `io` library lives in the caller's chunk env, not
+  -- in `_G`, so pager modules cannot reach it directly. Callers pass
+  -- `opts.io` (their own `io` table) to give us a handle.
+  local pio = opts.io or rawget(_G, "io")
+  local out = pio and pio.output and pio.output() or nil
   if out and not out._isatty then
     if out.write then out:write(text) end
     if text and not text:match("\n$") then out:write("\n") end

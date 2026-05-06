@@ -37,7 +37,12 @@ local sections = {
   },
   { "Packages",
     { "pkg list", "pkg info <id>", "pkg install [-f] <dir|id>",
-      "pkg uninstall <id>", "pkg verify <id>" }
+      "pkg uninstall <id>", "pkg verify <id>",
+      "pkg registry list", "pkg registry add <name> <url>",
+      "pkg registry remove <name>" }
+  },
+  { "Network",
+    { "wget [-q] [-O <file>] <url>" }
   },
   { "Documentation",
     { "help [--plain]", "man <name>", "less [file]", "more [file]" }
@@ -65,4 +70,4 @@ if plain then
   io.write(text)
   return 0
 end
-return pager.show(text, { title = "OCOS help" })
+return pager.show(text, { title = "OCOS help", io = io })

@@ -45,4 +45,13 @@ local ok, err = users.create(name, p1, { role = role })
 if not ok then io.stderr:write("useradd: " .. tostring(err) .. "\n"); return 1 end
 print(string.format("user '%s' created (%s)", name,
   role == "admin" and "full privileges — can sudo" or "limited; sudo will refuse"))
+-- Heads-up: a /etc/passwd with no admin entry locks the operator out
+-- of admin tasks (a non-admin alex can't even create another user).
+-- sessiond's rescue path catches this on next boot, but the user
+-- should know now so they can run `useradd --admin <name>` proactively.
+if not users.has_admin() then
+  io.stderr:write("useradd: warning — no admin user exists. ")
+  io.stderr:write("On next boot the system will rescue you back to root.\n")
+  io.stderr:write("           To fix now: useradd --admin <name>\n")
+end
 return 0

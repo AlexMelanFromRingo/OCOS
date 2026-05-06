@@ -71,7 +71,14 @@ local function login()
 end
 
 local stopping  = false
+local gui_active = false                           -- set while uid owns the screen
 local active_sh                                    -- pid of the shell we spawned
+
+-- Block key consumption in console.read_line whenever the GUI is up.
+-- See lib/term/console.lua set_input_gate — without this both sessiond
+-- and the GUI compositor process the same keystroke and the user sees
+-- their typing echoed in two places at once.
+console.set_input_gate(function() return not gui_active end)
 
 ipc.subscribe("svc.stop.sessiond", function()
   stopping = true
@@ -80,15 +87,21 @@ ipc.subscribe("svc.stop.sessiond", function()
 end)
 
 ipc.subscribe("svc.suspend.sessiond", function()
+  gui_active = true
   if active_sh then pcall(proc.pause, active_sh) end
   ipc.publish("ses.tty.released", {})
 end)
 
 ipc.subscribe("svc.resume.sessiond", function()
+  gui_active = false
   if active_sh then pcall(proc.resume, active_sh) end
   ipc.publish("ses.tty.acquired", {})
+  -- The GUI didn't necessarily clear the GPU on its way out, so wipe
+  -- the screen ourselves before any sessiond / shell text lands —
+  -- otherwise the dead desktop frame stays visible behind the prompt.
+  pcall(console.clear)
   -- Ask whatever console.read_line is currently parked in the shell to
-  -- repaint its prompt; the GUI cleared the screen on its way out.
+  -- repaint its prompt now that we've cleared the canvas.
   ipc.publish("console.redraw", {})
 end)
 
@@ -108,6 +121,17 @@ while not stopping do
   if users.empty() then
     rec, name = { home = "/home", caps = { "*" } }, "root"
     trace("users empty, dropping to root")
+  elseif not users.has_admin() then
+    -- Rescue path: /etc/passwd has only limited users (somebody ran
+    -- `useradd alex` without --admin and never created an admin). We
+    -- drop into a privileged root shell with no password so the user
+    -- can recover and add an admin account.
+    rec, name = { home = "/home", caps = { "*" } }, "root"
+    console.set_fg(0xE0A040)
+    console.writeln("rescue: no admin user in /etc/passwd — dropping to root")
+    console.writeln("        run `useradd --admin <name>` to create one")
+    console.set_fg(0xCCCCCC)
+    trace("rescue: no admin → root")
   else
     rec, name = login()
     if not rec then trace("login failed"); sched.sleep(1); goto continue end

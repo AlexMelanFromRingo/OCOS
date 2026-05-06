@@ -16,7 +16,16 @@ local function load_pattern_path(path)
   local fn = load(src, "=" .. path, "t", { math = math, string = string })
   if not fn then return nil end
   local ok, p = pcall(fn)
-  if ok and type(p) == "function" then return p end
+  if not ok or type(p) ~= "function" then return nil end
+  -- Convention: a wallpaper file may either return the pattern directly
+  -- (signature `function(x,y,theme) → ch,fg,bg`) or a constructor that
+  -- builds one (signature `function(opts) → pattern`). Probe by calling
+  -- with no args; if that yields a function, the chunk was a constructor
+  -- and the inner function is the real pattern. Otherwise treat the
+  -- chunk's return value as the pattern itself.
+  local probe_ok, probe = pcall(p)
+  if probe_ok and type(probe) == "function" then return probe end
+  return p
 end
 
 local function load_builtin(name)
@@ -27,11 +36,18 @@ end
 
 return function(props)
   props = props or {}
-  if not props.pattern then
-    props.pattern = load_pattern_path(props.pattern_path) or load_builtin(props.builtin)
+  local function resolve()
+    return load_pattern_path(props.pattern_path) or load_builtin(props.builtin)
   end
-  return widget.new("wallpaper", {
+  if not props.pattern then props.pattern = resolve() end
+  local W = widget.new("wallpaper", {
     measure = function(_, max_w, max_h) return max_w, max_h end,
+    -- Re-read the wallpaper file from disk so Settings → Wallpaper takes
+    -- effect without having to restart the desktop service.
+    reload = function(self)
+      self.props.pattern = resolve()
+      self:invalidate()
+    end,
     draw = function(self, buffer, theme)
       local b = self.bounds
       local desktop_bg = (theme.desktop and theme.desktop.bg) or theme.palette.bg
@@ -49,4 +65,5 @@ return function(props)
       self.dirty = false
     end,
   }, props)
+  return W
 end

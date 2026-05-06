@@ -6,6 +6,7 @@ local ui    = require("lib.ui")
 local sched = require("k.sched")
 local vfs   = require("k.vfs")
 local ipc   = require("k.ipc")
+local lang  = require("lib.lang")
 local widget = ui.widget
 local label  = ui.widgets.label
 local clock  = require("lib.ui.widgets.clock")
@@ -39,19 +40,19 @@ end
 -- ---- Apps menu ------------------------------------------------------
 
 local APPS = {
-  { glyph = "📁", label = "Files",     path = "/apps/files.app/Main.lua"    },
-  { glyph = "▦",  label = "Terminal",  path = "/apps/terminal.app/Main.lua" },
-  { glyph = "✎",  label = "Edit",      path = "/apps/edit.app/Main.lua"     },
-  { glyph = "🛈",  label = "Logs",      path = "/apps/dmesg.app/Main.lua"    },
-  { glyph = "🔍", label = "Inspect",   path = "/apps/inspect.app/Main.lua"  },
-  { glyph = "⚙",  label = "Settings",  path = "/apps/settings.app/Main.lua" },
+  { glyph = "📁", key = "dock.files",    path = "/apps/files.app/Main.lua"    },
+  { glyph = "▦",  key = "dock.terminal", path = "/apps/terminal.app/Main.lua" },
+  { glyph = "✎",  key = "dock.edit",     path = "/apps/edit.app/Main.lua"     },
+  { glyph = "🛈",  key = "dock.logs",     path = "/apps/dmesg.app/Main.lua"    },
+  { glyph = "🔍", key = "dock.inspect",  path = "/apps/inspect.app/Main.lua"  },
+  { glyph = "⚙",  key = "dock.settings", path = "/apps/settings.app/Main.lua" },
 }
 
 local launcher_win
 local function open_launcher()
   if launcher_win and launcher_win.visible then wm:focus(launcher_win); return end
   local items = {}
-  for _, a in ipairs(APPS) do items[#items + 1] = a.glyph .. "  " .. a.label end
+  for _, a in ipairs(APPS) do items[#items + 1] = a.glyph .. "  " .. lang.t(a.key) end
   local lst = list_w({
     items = items, width = 22, height = #items,
     on_select = function(_, _, idx)
@@ -131,9 +132,12 @@ local tb = taskbar({
 
 -- ---- Wallpaper (per-user if available) ------------------------------
 
+-- Default: solid desktop background. Per-user wallpaper at
+-- ~/.profile/wallpaper.lua overrides it; the built-ins (stripes,
+-- stars) break gpu run-coalescing into many small calls and aren't
+-- worth the per-frame cost on a T3 machine, so they're opt-in only.
 local wallpaper = wall({
   pattern_path = HOME .. "/.profile/wallpaper.lua",
-  builtin      = "stripes",
 })
 
 -- ---- Desktop icons (~/Desktop/) -------------------------------------
@@ -177,15 +181,31 @@ compositor:add(root)
 if compositor.attach_wm then compositor:attach_wm(wm) end
 compositor:invalidate()
 
--- One-second tick: clock + toast expiry + window chips repaint.
+-- One-second tick: refresh the bits that show time. clock.lua's own
+-- ticker already invalidates status_clock once a second, so we only
+-- need to nudge the taskbar (its mini-clock format hasn't subscribed
+-- to clock.tick yet). compositor:invalidate just flips self.dirty —
+-- it no longer wipes the prev cell arrays, so the diff-flush still
+-- emits only the seconds-digit cells that actually changed.
 sched.spawn(function()
   while true do
     sched.sleep(1)
-    tb:invalidate(); status_clock:invalidate()
-    compositor:invalidate()
+    tb:invalidate()
     computer.pushSignal("__ui_tick")
   end
 end, { name = "desktop-tick", caps = { "*" } })
+
+-- Force a full repaint when the active locale changes so the user
+-- immediately sees the new strings in launcher, taskbar and settings.
+ipc.subscribe("lang.changed", function() compositor:invalidate() end)
+
+-- Live wallpaper swap: Settings writes ~/.profile/wallpaper.lua and
+-- publishes this signal; we ask the widget to re-read the file and
+-- mark itself dirty so the next render picks up the new pattern.
+ipc.subscribe("ui.wallpaper.changed", function()
+  if wallpaper.reload then wallpaper:reload() end
+  compositor:full_repaint()
+end)
 
 ipc.publish("ui.notify", { title = "Welcome", body = "OCOS desktop loaded for " .. USER })
 

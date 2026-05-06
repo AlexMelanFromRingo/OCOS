@@ -19,9 +19,17 @@ return {
   ["dock.settings"]     = "Settings",
 
   -- Settings app
-  ["settings.title"]    = "Settings",
-  ["settings.theme"]    = "Theme (Enter to apply):",
-  ["settings.locale"]   = "Language:",
+  ["settings.title"]      = "Settings",
+  ["settings.theme"]      = "Theme (Enter to apply):",
+  ["settings.locale"]     = "Language:",
+  ["settings.tab.appearance"] = "Appearance",
+  ["settings.tab.wallpaper"]  = "Wallpaper",
+  ["settings.tab.language"]   = "Language",
+  ["settings.tab.time"]       = "Time",
+  ["settings.tab.update"]     = "Update",
+  ["settings.tab.about"]      = "About",
+  ["settings.notify.lang"]    = "Switched to %s",
+  ["settings.lang.title"]     = "Language",
 
   -- Generic UI
   ["ui.close"]          = "Close",

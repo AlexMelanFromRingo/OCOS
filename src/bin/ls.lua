@@ -80,7 +80,18 @@ end
 table.sort(entries)
 
 local out = io.stdout
-local use_color = (want_color == "always") or (want_color == "auto" and out._isatty)
+local use_color = (want_color == "always") or (want_color == "auto" and (out._isatty or out._ansi))
+
+-- Map our 0xRRGGBB shades to the closest ANSI 8-colour fg code so a
+-- terminal that only knows `\x1b[31m` style still gets the right hue.
+local ANSI_FG_FOR = {
+  [0x4FA0F0] = 94,   -- dir       → bright blue
+  [0x66DD66] = 92,   -- exec      → bright green
+  [0xCC66CC] = 95,   -- image     → bright magenta
+  [0xE05050] = 91,   -- archive   → bright red
+  [0xE0C040] = 93,   -- config    → bright yellow
+  [0x808080] = 90,   -- hidden    → bright black (grey)
+}
 
 local function emit(name, kind)
   -- The colour already tells the user this is a directory; no trailing
@@ -88,8 +99,12 @@ local function emit(name, kind)
   if use_color then
     local fg = FG[kind]
     if fg then
-      local prev = console.fg()
-      console.set_fg(fg); out:write(name); console.set_fg(prev)
+      if out._ansi then
+        out:write(string.format("\27[%dm%s\27[0m", ANSI_FG_FOR[fg] or 39, name))
+      else
+        local prev = console.fg()
+        console.set_fg(fg); out:write(name); console.set_fg(prev)
+      end
     else
       out:write(name)
     end

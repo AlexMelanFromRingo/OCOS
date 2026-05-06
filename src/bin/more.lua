@@ -17,4 +17,4 @@ if args[1] then
 else
   input, title = io.input():read("a") or "", "stdin"
 end
-return pager.show(input, { title = title, always = true })
+return pager.show(input, { title = title, always = true, io = io })

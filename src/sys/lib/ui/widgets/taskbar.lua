@@ -8,9 +8,22 @@
 
 local widget = require("lib.ui.widget")
 
+local vfs_for_time = require("k.vfs")
 local function clock_text()
   local t = math.floor((computer.realTime and computer.realTime()) or computer.uptime())
-  local h, m = math.floor(t / 3600) % 24, math.floor(t / 60) % 60
+  -- Apply the user-set offset from /etc/time.cfg. Re-read every tick;
+  -- it's a few-byte file so the cost is irrelevant.
+  if vfs_for_time.exists("/etc/time.cfg") then
+    local fn = load(vfs_for_time.read_all("/etc/time.cfg") or "", "=time.cfg", "t", {})
+    if fn then
+      local ok, cfg = pcall(fn)
+      if ok and type(cfg) == "table" and tonumber(cfg.offset) then
+        t = t + cfg.offset
+      end
+    end
+  end
+  t = t % 86400
+  local h, m = math.floor(t / 3600), math.floor(t / 60) % 60
   return string.format("%02d:%02d", h, m)
 end
 
@@ -38,7 +51,12 @@ return function(props)
       local right_reserve = 18   -- room for "  user 14:32  POWR"
       local list = self.props.wm and self.props.wm:windows_for_taskbar() or {}
       for _, w in ipairs(list) do
+        -- Strip any " - <path>" suffix the app baked into its title:
+        -- the chip is too narrow for paths and the user only needs the
+        -- app name to recognise the window.
         local label = w.title or "Window"
+        local sep = label:find(" %- ")
+        if sep then label = label:sub(1, sep - 1) end
         if #label > 12 then label = label:sub(1, 11) .. "…" end
         local marker = w.minimised and "_" or (w.focused and ">" or " ")
         local chip = " " .. marker .. label .. " "

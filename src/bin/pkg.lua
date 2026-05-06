@@ -4,7 +4,16 @@ local install = require("lib.pkg.install")
 local db      = require("lib.pkg.db")
 
 local function usage()
-  io.stderr:write("usage: pkg {install [-f] <dir> | uninstall <id> | list | info <id> | verify <id>}\n")
+  io.stderr:write([[usage: pkg <command>
+  install [-f] <dir|id|url>    install from local dir or registry
+  uninstall <id>               remove an installed package
+  list                         list installed packages
+  info <id>                    show installed package metadata
+  verify <id>                  re-check installed file checksums
+  registry list                show configured registries
+  registry add <name> <url>    add a registry
+  registry remove <name>       remove a registry
+]])
   return 2
 end
 
@@ -74,6 +83,57 @@ if cmd == "verify" then
   local ok, err = install.verify(id)
   if ok then print("OK"); return 0 end
   io.stderr:write("FAIL " .. tostring(err) .. "\n"); return 1
+end
+
+if cmd == "registry" then
+  local sub = args[2]
+  local registry = require("lib.pkg.registry")
+  local vfs      = require("k.vfs")
+  local CFG_PATH = "/etc/registries.cfg"
+
+  local function save(list)
+    local out = { "-- Configured package registries.",
+                  "-- Edit by hand or via `pkg registry add/remove`.",
+                  "return {" }
+    for _, r in ipairs(list) do
+      out[#out + 1] = string.format("  { name = %q, url = %q },", r.name, r.url)
+    end
+    out[#out + 1] = "}"; out[#out + 1] = ""
+    return vfs.write_all(CFG_PATH, table.concat(out, "\n"))
+  end
+
+  if sub == "list" or not sub then
+    local list = registry.read_registries()
+    if #list == 0 then print("(no registries configured)"); return 0 end
+    for _, r in ipairs(list) do print(string.format("%-20s  %s", r.name, r.url)) end
+    return 0
+  elseif sub == "add" then
+    local name, url = args[3], args[4]
+    if not (name and url) then
+      io.stderr:write("usage: pkg registry add <name> <url>\n"); return 2
+    end
+    local list = registry.read_registries()
+    for _, r in ipairs(list) do
+      if r.name == name then io.stderr:write("pkg: registry exists: " .. name .. "\n"); return 1 end
+    end
+    list[#list + 1] = { name = name, url = url }
+    local ok, err = save(list)
+    if not ok then io.stderr:write("pkg: " .. tostring(err) .. "\n"); return 1 end
+    print("added " .. name)
+    return 0
+  elseif sub == "remove" or sub == "rm" then
+    local name = args[3]; if not name then io.stderr:write("usage: pkg registry remove <name>\n"); return 2 end
+    local list = registry.read_registries()
+    local kept = {}
+    for _, r in ipairs(list) do if r.name ~= name then kept[#kept + 1] = r end end
+    if #kept == #list then io.stderr:write("pkg: no such registry: " .. name .. "\n"); return 1 end
+    local ok, err = save(kept)
+    if not ok then io.stderr:write("pkg: " .. tostring(err) .. "\n"); return 1 end
+    print("removed " .. name)
+    return 0
+  else
+    io.stderr:write("pkg registry: unknown subcommand: " .. tostring(sub) .. "\n"); return 2
+  end
 end
 
 return usage()

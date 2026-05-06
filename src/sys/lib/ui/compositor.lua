@@ -55,8 +55,9 @@ end
 
 function Compositor:set_theme(theme)
   self.theme = theme
-  self.buffer:invalidate()
-  self.dirty = true
+  -- Theme swap changes every fg/bg in the world, so this is the rare
+  -- case where we want the prev arrays cleared.
+  self:full_repaint()
 end
 
 local function any_dirty(node)
@@ -130,7 +131,14 @@ function Compositor:run()
         self.root:layout(1, 1, ev.w, ev.h)
         self.root:invalidate()
       end
-      self.root:on_event(ev)
+      -- Route through the WM first so global drag / resize / Alt-Tab
+      -- gestures are handled before the widget tree sees the event.
+      -- Without this, dragging the title bar never updated window
+      -- bounds — the click reached the window widget directly and the
+      -- WM's drag bookkeeping in `:dispatch` was bypassed.
+      if not (self.wm and self.wm:handle_global_event(ev)) then
+        self.root:on_event(ev)
+      end
     end
     self:render()
   end
@@ -140,7 +148,22 @@ end
 function Compositor:request_stop() self.stop = true; computer.pushSignal(TICK) end
 
 function Compositor:size() return self.buffer:size() end
-function Compositor:invalidate() self.dirty = true; self.buffer:invalidate() end
+
+-- `invalidate` requests a re-render but trusts the diff-flush in
+-- Buffer:flush to push only the cells that actually changed. Callers
+-- that need an unconditional repaint (theme swap, screen resize) call
+-- `full_repaint` instead — it resets the prev cell arrays so every
+-- cell is treated as dirty on the next flush. The day-to-day tick
+-- (clock, taskbar chips) goes through `invalidate` and stays cheap.
+function Compositor:invalidate()
+  self.dirty = true
+  computer.pushSignal(TICK)
+end
+function Compositor:full_repaint()
+  self.dirty = true
+  self.buffer:invalidate()
+  computer.pushSignal(TICK)
+end
 
 M.Compositor = Compositor
 return M

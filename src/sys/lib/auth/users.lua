@@ -148,6 +148,16 @@ function M.default_caps(name, role, home)
   }
 end
 
+local function next_uid(db, requested, name)
+  if requested then return requested end
+  if name == "root" then return 0 end
+  local max = 999
+  for _, rec in pairs(db) do
+    if (rec.uid or 0) > max then max = rec.uid end
+  end
+  return max + 1
+end
+
 function M.create(name, password, opts)
   opts = opts or {}
   local db, path = load_db()
@@ -157,7 +167,7 @@ function M.create(name, password, opts)
   local hex = pbkdf2.derive(password, salt, iters)
   local home = opts.home or ("/home/" .. name)
   db[name] = {
-    uid    = opts.uid or (next(db) and 1000 + #db or 0),
+    uid    = next_uid(db, opts.uid, name),
     gid    = opts.gid or 1000,
     salt   = salt,
     pbkdf2 = hex,
@@ -170,7 +180,13 @@ function M.create(name, password, opts)
   -- may be on a read-only boot fs in dev; production installs put OCOS
   -- on a writable disk and this just works).
   pcall(vfs.mkdir, home)
-  return save_db(db, path)
+  local ok, err = save_db(db, path)
+  if ok then
+    pcall(require("lib.auth.audit").write,
+      { kind = "user.create", user = name, target = path,
+        detail = "role=" .. (opts.role or "user") .. " uid=" .. tostring(db[name].uid) })
+  end
+  return ok, err
 end
 
 function M.is_admin(name)
@@ -195,14 +211,24 @@ function M.set_password(name, password, opts)
   db[name].salt   = salt
   db[name].pbkdf2 = pbkdf2.derive(password, salt, iters)
   db[name].iters  = iters
-  return save_db(db, path)
+  local ok, err = save_db(db, path)
+  if ok then
+    pcall(require("lib.auth.audit").write,
+      { kind = "user.passwd", user = name, target = path })
+  end
+  return ok, err
 end
 
 function M.remove(name)
   local db, path = load_db()
   if not db[name] then return nil, "no such user" end
   db[name] = nil
-  return save_db(db, path)
+  local ok, err = save_db(db, path)
+  if ok then
+    pcall(require("lib.auth.audit").write,
+      { kind = "user.remove", user = name, target = path })
+  end
+  return ok, err
 end
 
 function M.empty()
@@ -210,6 +236,19 @@ function M.empty()
   -- next() does not get `path` as a second argument and complain about it
   -- as an "invalid key".
   return next((load_db())) == nil
+end
+
+function M.has_admin()
+  -- True if at least one user holds the wildcard cap. Used by sessiond
+  -- to decide whether to fall through to the rescue (root) path: if a
+  -- fresh install only has limited-cap accounts, /etc/passwd would
+  -- otherwise lock the operator out of admin tasks entirely.
+  for _, rec in pairs((load_db())) do
+    for _, c in ipairs(rec.caps or {}) do
+      if c == "*" then return true end
+    end
+  end
+  return false
 end
 
 return M

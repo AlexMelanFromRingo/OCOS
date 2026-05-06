@@ -8,13 +8,29 @@ local widget = require("lib.ui.widget")
 local sched  = require("k.sched")
 local ipc    = require("k.ipc")
 
+local vfs = require("k.vfs")
+local TIME_CFG = "/etc/time.cfg"
+
+-- Settings → Time writes a seconds offset here so the user can pick
+-- their own wall-clock time on machines where computer.realTime is
+-- absent or wrong. Re-read on every tick — costs nothing and lets the
+-- new offset apply without restarting the desktop.
+local function read_offset()
+  if not vfs.exists(TIME_CFG) then return 0 end
+  local fn = load(vfs.read_all(TIME_CFG) or "", "=" .. TIME_CFG, "t", {})
+  if not fn then return 0 end
+  local ok, t = pcall(fn)
+  return (ok and type(t) == "table" and tonumber(t.offset)) or 0
+end
+
 local function format_clock()
   -- Prefer OC's wall clock when the host exposes it; older builds (e.g.
   -- the 1.12.2 community port) ship without computer.realTime, so fall
   -- back to uptime. The `and` form is necessary — `realTime() or …`
   -- still calls realTime, which errors out if the field is nil.
   local t = math.floor((computer.realTime and computer.realTime()) or computer.uptime())
-  local h = math.floor(t / 3600) % 24
+  t = (t + read_offset()) % 86400
+  local h = math.floor(t / 3600)
   local m = math.floor(t / 60) % 60
   local s = t % 60
   return string.format("%02d:%02d:%02d", h, m, s)

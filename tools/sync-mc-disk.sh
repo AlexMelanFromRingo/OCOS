@@ -38,6 +38,10 @@ rsync -a --delete \
   --exclude '/.ocos-symlinks' \
   --exclude '/etc/boot.selftest' \
   --exclude '/etc/boot.cfg' \
+  --exclude '/etc/passwd' \
+  --exclude '/etc/security.cfg' \
+  --exclude '/etc/audit.log' \
+  --exclude '/etc/time.cfg' \
   "$ROOT/src/" "$DEST/"
 
 echo "done. Reboot the OC machine in-game to pick up the new code."

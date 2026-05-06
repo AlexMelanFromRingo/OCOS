@@ -200,7 +200,18 @@ local function history_list(h)
   return h.entries or {}
 end
 
+-- Input gate: while the GUI compositor owns the screen, sessiond
+-- mounts a gate that returns false. Read_line then ignores key_down /
+-- clipboard events so the GUI is the sole consumer; the gate flips
+-- back open on svc.resume.sessiond. Without this both layers double-
+-- echoed every keystroke.
+local input_gate = function() return true end
+function M.set_input_gate(fn) input_gate = fn or function() return true end end
+
 local function key_filter(name)
+  if (name == "key_down" or name == "clipboard") and not input_gate(name) then
+    return false
+  end
   return name == "key_down" or name == "clipboard" or name == "__console_redraw"
 end
 
