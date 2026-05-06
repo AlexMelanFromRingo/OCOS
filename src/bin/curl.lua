@@ -24,6 +24,8 @@ local out_path
 local follow      = false
 local include     = false
 local silent      = false
+local pure_tls    = false
+local insecure    = false
 local url
 
 local function shift(i)
@@ -52,6 +54,10 @@ while i <= #args do
     silent = true; i = i + 1
   elseif a == "-A" or a == "--user-agent" then
     headers[#headers + 1] = "User-Agent: " .. shift(i + 1); i = i + 2
+  elseif a == "--tls-pure" then
+    pure_tls = true; i = i + 1
+  elseif a == "-k" or a == "--insecure" then
+    insecure = true; i = i + 1
   elseif a:sub(1, 1) == "-" then
     io.stderr:write("curl: unknown option: " .. a .. "\n"); return 2
   else
@@ -61,17 +67,90 @@ while i <= #args do
 end
 
 if not url then
-  io.stderr:write("usage: curl [-X METHOD] [-H 'K: V'] [-d BODY] [-o FILE] [-L] [-s] <url>\n")
+  io.stderr:write([[usage: curl [-X METHOD] [-H 'K: V'] [-d BODY] [-o FILE] [-L] [-s] [--tls-pure] [-k] <url>
+
+  --tls-pure   use OCOS pure-Lua TLS (lib/net/tls) instead of OC's
+               native HTTPS — useful when the OC server has TLS
+               disabled or you want signature verification done by
+               OCOS's own crypto stack.
+  -k           with --tls-pure, skip cert chain verification
+               (still verifies CertificateVerify and Finished MAC).
+
+]])
   return 2
 end
 if not internet.has_internet() then
   io.stderr:write("curl: no internet card / HTTP disabled\n"); return 1
 end
 
+-- ---- pure-Lua TLS path -------------------------------------------------
+
+local function pure_https(target_url)
+  local tls = require("lib.net.tls")
+  local scheme, host, rest = target_url:match("^(https?)://([^/]+)(.*)$")
+  if not host then return nil, "bad URL" end
+  if scheme ~= "https" then return nil, "--tls-pure only handles https://" end
+  local port = 443
+  local h, p = host:match("^([^:]+):(%d+)$"); if h then host = h; port = tonumber(p) end
+  if rest == "" then rest = "/" end
+
+  if not silent then io.stderr:write("→ " .. method .. " " .. target_url .. " (pure-Lua TLS)\n") end
+  local conn, err = tls.connect(host, port, {
+    verify  = insecure and "insecure" or "strict",
+    timeout = 30,
+  })
+  if not conn then return nil, err end
+
+  -- Build HTTP/1.1 request.
+  local req = { method .. " " .. rest .. " HTTP/1.1",
+                "Host: " .. host,
+                "User-Agent: curl/ocos",
+                "Connection: close" }
+  for _, hh in ipairs(headers) do req[#req + 1] = hh end
+  if body then
+    req[#req + 1] = "Content-Length: " .. #body
+  end
+  req[#req + 1] = ""; req[#req + 1] = body or ""
+  local raw = table.concat(req, "\r\n")
+  conn:write(raw)
+
+  -- Read until close_notify / EOF.
+  local parts = {}
+  while true do
+    local chunk, rerr = conn:read()
+    if not chunk then
+      if rerr then return nil, rerr end
+      break
+    end
+    parts[#parts + 1] = chunk
+  end
+  conn:close()
+  local resp = table.concat(parts)
+
+  -- Split status line + headers + body.
+  local sep = resp:find("\r\n\r\n", 1, true)
+  if not sep then return nil, "malformed response" end
+  local hdr = resp:sub(1, sep - 1)
+  local data = resp:sub(sep + 4)
+  local status_line = hdr:match("^(HTTP/%S+ %d+ [^\r\n]*)")
+  local status_code = tonumber(hdr:match("^HTTP/%S+ (%d+)"))
+  local resp_headers = {}
+  for line in (hdr .. "\r\n"):gmatch("([^\r\n]+)\r\n") do
+    local k, v = line:match("^([^:]+):%s*(.*)$")
+    if k then resp_headers[k] = v end
+  end
+  return data, status_code, resp_headers, status_line
+end
+
 -- The driver's http_request takes opts.method but it ignores it on the
 -- OC native side — the card always issues whatever method the body
 -- presence implies (GET when body=nil, POST otherwise). We pass body
 -- as a string so the card honours the user's choice.
+local function once_pure(target_url)
+  local data, status, hdrs = pure_https(target_url)
+  return data, status, hdrs
+end
+
 local function once(target_url)
   local hdr_table = {}
   for _, h in ipairs(headers) do
@@ -92,7 +171,11 @@ local data, status, resp_hdrs
 local hops = 0
 local current = url
 while true do
-  data, status, resp_hdrs = once(current)
+  if pure_tls then
+    data, status, resp_hdrs = once_pure(current)
+  else
+    data, status, resp_hdrs = once(current)
+  end
   if not data then
     io.stderr:write("curl: " .. tostring(status) .. "\n"); return 1
   end

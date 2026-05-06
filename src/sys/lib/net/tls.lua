@@ -334,22 +334,46 @@ end
 -- ---- cert chain verification -----------------------------------------
 
 local function verify_cert_signature(parent_pub, hash_alg, sig_kind, sig, tbs)
-  -- Compute the digest the signature is supposed to cover.
+  -- Ed25519 signs the message itself, not its hash.
+  if sig_kind == "ed25519" and parent_pub.kind == "ed25519" then
+    return ed25519.verify(parent_pub.pub, tbs, sig)
+  end
+  -- For RSA verification we need the digest of the signed-bytes per
+  -- the chosen hash algorithm.
   local digest
-  if hash_alg == "sha256" then digest = sha256.bytes(tbs)
-  elseif hash_alg == "sha384" or hash_alg == "sha512" then
-    digest = sha512.bytes(tbs)                                   -- close enough for sha384? No: TODO
+  if hash_alg == "sha256" then
+    digest = sha256.bytes(tbs)
+  elseif hash_alg == "sha512" then
+    digest = sha512.bytes(tbs)
+  else
+    return false, "unsupported hash for cert sig: " .. tostring(hash_alg)
   end
   if sig_kind == "rsa-pkcs1" and parent_pub.kind == "rsa" then
     return rsa.verify_pkcs1_v15(parent_pub, hash_alg, digest, sig)
   elseif sig_kind == "rsa-pss" and parent_pub.kind == "rsa" then
     return rsa.verify_pss(parent_pub, hash_alg, digest, sig)
-  elseif sig_kind == "ed25519" and parent_pub.kind == "ed25519" then
-    -- Ed25519 signs the message itself, not its hash.
-    return ed25519.verify(parent_pub.pub, tbs, sig)
   end
   return false, string.format("unsupported sig combo: %s by %s", sig_kind, parent_pub.kind)
 end
+
+-- Load every DER cert in a directory tree as a parsed x509 record.
+-- Used by tls.connect's "strict" mode to populate opts.trust from
+-- /etc/ssl/roots/ when the caller didn't pass an explicit list.
+local function load_trust_dir(dir)
+  local vfs = require("k.vfs")
+  local out = {}
+  if not vfs.exists(dir) then return out end
+  local entries = vfs.list(dir) or {}
+  for _, name in ipairs(entries) do
+    local clean = name:gsub("/$", "")
+    if clean:sub(-4) == ".der" or clean:sub(-4) == ".cer" then
+      local data = vfs.read_all(dir .. "/" .. clean)
+      if data then out[#out + 1] = data end
+    end
+  end
+  return out
+end
+M.load_trust_dir = load_trust_dir
 
 local function verify_chain(chain, host, mode, opts)
   if #chain == 0 then return false, "empty cert chain" end
@@ -372,15 +396,22 @@ local function verify_chain(chain, host, mode, opts)
       child.sig_alg.hash, child.sig_alg.kind, child.signature, child.tbs_raw)
     if not ok then return false, "cert " .. i .. ": " .. tostring(err) end
   end
-  -- Trust store check: top-of-chain signed by a known root.
-  local top = chain[#chain]
-  for _, root_der in ipairs(opts.trust or {}) do
-    local root = x509.parse(root_der)
-    local ok = pcall(verify_cert_signature, root.public_key,
-      top.sig_alg.hash, top.sig_alg.kind, top.signature, top.tbs_raw)
-    if ok then return true end
+  -- Trust store check: top-of-chain signed by a known root. Default
+  -- to /etc/ssl/roots/ when caller didn't pass opts.trust explicitly.
+  local trust_ders = opts.trust
+  if not trust_ders or #trust_ders == 0 then
+    trust_ders = load_trust_dir("/etc/ssl/roots")
   end
-  return false, "no matching trust anchor"
+  local top = chain[#chain]
+  for _, root_der in ipairs(trust_ders) do
+    local rok, root = pcall(x509.parse, root_der)
+    if rok and root then
+      local sok, serr = pcall(verify_cert_signature, root.public_key,
+        top.sig_alg.hash, top.sig_alg.kind, top.signature, top.tbs_raw)
+      if sok and serr then return true end          -- pcall returns ok + verify return
+    end
+  end
+  return false, "no matching trust anchor (" .. #trust_ders .. " roots tried)"
 end
 
 -- ---- the connect ------------------------------------------------------

@@ -44,7 +44,7 @@ local sections = {
   },
   { "Network",
     { "wget [-q] [-O <file>] <url>",
-      "curl [-X method] [-H 'K: V'] [-d body] [-o file] [-L] <url>",
+      "curl [-X method] [-H 'K: V'] [-d body] [-o file] [-L] [--tls-pure] [-k] <url>",
       "git clone [-b <branch>] <github-url> [<dest>]" }
   },
   { "Documentation",
