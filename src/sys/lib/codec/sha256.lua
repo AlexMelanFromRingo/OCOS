@@ -101,8 +101,12 @@ local function pure_sha256_bytes(msg)
 end
 
 local function find_data_card()
-  local addr = component.list("data")()
-  if addr then return component.proxy(addr) end
+  -- `component` is provided by the OC runtime; in unit-test contexts
+  -- (host-side Lua running off the repo) it's nil and we just fall
+  -- back to the pure-Lua path below.
+  if not _G.component or not _G.component.list then return nil end
+  local addr = _G.component.list("data")()
+  if addr then return _G.component.proxy(addr) end
 end
 
 local function to_hex(b)

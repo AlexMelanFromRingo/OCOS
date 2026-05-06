@@ -343,6 +343,32 @@ function M.run()
     assert(#k.key == 32 and #k.iv == 12, "traffic key sizes wrong")
   end)
 
+  check("RSA verify (pkcs1-v1_5 + pss)", function()
+    local bigint = require("lib.codec.bigint")
+    local rsa    = require("lib.codec.rsa")
+    local function bin(h) return (h:gsub("..", function(c) return string.char(tonumber(c, 16)) end)) end
+    -- Self-generated test vectors. The numbers are 1024-bit RSA so the
+    -- selftest finishes in a few seconds even on T2.
+    local pub = {
+      n = bigint.from_bytes(bin("ccf7230cafb8258c6a18335cc34dcaab9dac289a877810f63e741ff0085ca81a9f6030a531237ae259b382a6aae1fdf9f3314db40488c6890cfdf50d37108b4a616934411c2724837157079d6baf128e900f7dd5a22d648df0813e9fb3cb507b7851765b4d7e604d94067cac10d29b363c12b7135275c86c33926e429400e813")),
+      e = bigint.from_bytes(bin("010001")),
+    }
+    local h = bin("2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824")
+    local sig = bin("0ab46b2290e1098c8d307c023ff1a03bd330a4d9033496e446388af64f73a98ef42f2d4b00372a830b196493dc15ad2a2ffb4e3fdc8106b1b9229acc64df53348f73cfa58382a7b0cca14c15a0562fb362e837fbf397b04bfc24d972fda66b2f3c775da075ac40e96cd150228120e23b38a95390566bcb713b1c296b1f48a62b")
+    assert(rsa.verify_pkcs1_v15(pub, "sha256", h, sig), "PKCS#1 v1.5 verify failed")
+    -- Tamper test
+    local bad = "\1" .. sig:sub(2)
+    assert(not rsa.verify_pkcs1_v15(pub, "sha256", h, bad), "PKCS#1 verify accepted tampered sig")
+
+    local pub2 = {
+      n = bigint.from_bytes(bin("d10471cb54971d8f0eb075776f6ae6ea7ae4af04eb8273261617533ec0963e2421649c0fd87ad00680c88c3a078fd8606eee62155e3100065532e2369a275bac448e95a43dd47aae1d07b701c69cf8af359fca50d27fe9f5b59f9231b086ac8d88e600e817c3f7451dde807d7e3d3ca6b0376b1a70e532612a6722c3b55c60ed")),
+      e = bigint.from_bytes(bin("010001")),
+    }
+    local sig2 = bin("547cfd3e9512ca489d68d6891417e5404ff7ace978ae12c927b0c14434f7f303ca4fd2ae5d2441c761d2f95ee1d157b35dd0913a03c6135db189e056b5561b493d11c914131ea29daa26abec0f584fa573e086149488176dc767a9d4813b4105b600fb5c181e2080ca983c93e91eab32f1828afbd0fd4e830ca2d0096b9a2f0a")
+    assert(rsa.verify_pss(pub2, "sha256", h, sig2), "PSS verify failed")
+    assert(not rsa.verify_pss(pub2, "sha256", h, "\1" .. sig2:sub(2)), "PSS accepted tampered sig")
+  end)
+
   check("HKDF-SHA256 RFC 5869 vector", function()
     local hkdf = require("lib.codec.hkdf")
     local function bin(s) return (s:gsub("..", function(c) return string.char(tonumber(c, 16)) end)) end

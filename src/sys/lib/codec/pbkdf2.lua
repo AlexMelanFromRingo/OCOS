@@ -25,12 +25,16 @@ end
 -- the kernel kills coroutines for. Yield every 256 iterations so login
 -- (and the installer's setup-root path) survives the budget regardless
 -- of CPU tier or whether a data card is accelerating SHA-256.
-local function yield()
-  local sched = package.loaded["k.sched"]
-  if sched and sched.sleep then
-    pcall(sched.sleep, 0)
-    return
+local SCHED
+do
+  if _G.require then
+    local ok, mod = pcall(_G.require, "k.sched")
+    if ok and type(mod) == "table" then SCHED = mod end
   end
+end
+
+local function yield()
+  if SCHED and SCHED.sleep then pcall(SCHED.sleep, 0); return end
   -- OpenOS / installer context — computer.pullSignal(0) is the
   -- canonical way to relinquish the call budget without sleeping.
   if _G.computer and _G.computer.pullSignal then

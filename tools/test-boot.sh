@@ -18,7 +18,9 @@ done
 
 # `script` gives ocvm a real PTY (avoids 0×0 gpu); the OS shuts down on
 # completion so the outer timeout is just a stuck-boot guard.
-timeout 10 script -qc "$ROOT/tools/run-emu.sh" /tmp/ocvm-selftest.txt </dev/null >/dev/null 2>&1 || true
+# 180s budget — RSA verify on 1024-bit takes ~10-30s of pure-Lua
+# mod-mul on modest hardware, and the watchdog yields it down further.
+timeout 180 script -qc "$ROOT/tools/run-emu.sh" /tmp/ocvm-selftest.txt </dev/null >/dev/null 2>&1 || true
 
 LOG="$(find "$INSTANCE" -mindepth 2 -maxdepth 2 -name selftest.log -print -quit || true)"
 if [[ -z "$LOG" || ! -f "$LOG" ]]; then
