@@ -1,19 +1,15 @@
 -- /sys/lib/codec/curve25519.lua — X25519 key agreement (RFC 7748).
 --
--- STATUS: work-in-progress. The TweetNaCl-style ladder structure is in
--- place, individual field-element primitives (mul / sq / invert /
--- to_bytes) check out on simple test cases (5*7, FFFF*FFFF, x*x⁻¹=1),
--- but `scalarmult` does not yet match the RFC 7748 §5.2 reference
--- vectors — there is still a subtle bug somewhere in the ladder. Do
--- not depend on this module for any security-relevant work yet; once
--- it passes the iterated `k_(n+1) = X25519(k_n, u_n)` vectors it gets
--- wired into selftest and the pkg signature path.
---
 -- Pure Lua 5.3 port. Field elements are 16-limb arrays of signed
 -- 16-bit numbers (radix 2^16) — the same representation TweetNaCl
 -- uses, chosen because every limb-pair multiplication fits in 32 bits
 -- and an accumulator over 16 such products still fits comfortably in
 -- 64-bit Lua integers.
+--
+-- Passes the RFC 7748 §5.2 reference vectors (vector 1 and iterated
+-- k_1 = X25519(9, 9)). Note Lua 5.3's `>>` is logical (zero-fill);
+-- the carry chain uses ashr16 below to get the arithmetic-shift
+-- behaviour TweetNaCl's i64 limbs assume.
 --
 -- Public API:
 --   curve25519.scalarmult(scalar_bytes, u_bytes) -> 32-byte shared secret
@@ -51,6 +47,13 @@ local function fe_from_bytes(s)
   return h
 end
 
+-- Arithmetic right shift by 16. Lua 5.3's `>>` is logical (zero-fill),
+-- so negative limb values explode into huge positives — TweetNaCl's
+-- C code relies on arithmetic shift to sign-extend. math.floor / 2^16
+-- gives the same answer as the C `>>` for both positive and negative
+-- inputs without depending on the platform's >> semantics.
+local function ashr16(x) return (x - (x % 65536)) // 65536 end
+
 local function fe_carry(h)
   -- TweetNaCl car25519 (sv): for each limb add 2^16 then subtract its
   -- new bit-16+ contents shifted back into the next limb. The "-1"
@@ -59,13 +62,13 @@ local function fe_carry(h)
   -- 2^256 ≡ 38 (mod p) for p = 2^255 - 19.
   for i = 1, 16 do
     h[i] = h[i] + 65536
-    local c = h[i] >> 16
+    local c = ashr16(h[i])
     if i < 16 then
       h[i + 1] = h[i + 1] + c - 1
     else
       h[1] = h[1] + 38 * (c - 1)
     end
-    h[i] = h[i] - (c << 16)
+    h[i] = h[i] - (c * 65536)
   end
 end
 
@@ -79,11 +82,11 @@ local function fe_to_bytes(h)
     local m = {}
     m[1] = h[1] - 0xFFED
     for i = 2, 15 do
-      m[i] = h[i] - 0xFFFF - ((m[i - 1] >> 16) & 1)
+      m[i] = h[i] - 0xFFFF - (ashr16(m[i - 1]) & 1)
       m[i - 1] = m[i - 1] & 0xFFFF
     end
-    m[16] = h[16] - 0x7FFF - ((m[15] >> 16) & 1)
-    local b = (m[16] >> 16) & 1
+    m[16] = h[16] - 0x7FFF - (ashr16(m[15]) & 1)
+    local b = ashr16(m[16]) & 1
     m[15] = m[15] & 0xFFFF
     -- if b == 0 (no underflow), m is the smaller residue: copy it back.
     local mask = (1 - b)                              -- 1 if we keep m, 0 if we keep h

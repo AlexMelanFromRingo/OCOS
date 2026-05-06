@@ -39,20 +39,58 @@ end
 
 -- ---- Apps menu ------------------------------------------------------
 
-local APPS = {
-  { glyph = "📁", key = "dock.files",    path = "/apps/files.app/Main.lua"    },
-  { glyph = "▦",  key = "dock.terminal", path = "/apps/terminal.app/Main.lua" },
-  { glyph = "✎",  key = "dock.edit",     path = "/apps/edit.app/Main.lua"     },
-  { glyph = "🛈",  key = "dock.logs",     path = "/apps/dmesg.app/Main.lua"    },
-  { glyph = "🔍", key = "dock.inspect",  path = "/apps/inspect.app/Main.lua"  },
-  { glyph = "⚙",  key = "dock.settings", path = "/apps/settings.app/Main.lua" },
-}
+-- Build the launcher entry list by scanning /apps/*.app/manifest.cfg.
+-- Builtin manifests carry `glyph`, `lang_key` and `launcher_order` so
+-- they get localized labels and a stable visual order; pkg-installed
+-- apps drop into the same directory and pick up the same scan, so
+-- `pkg install foo.app` makes foo show up in the launcher with no
+-- extra wiring. Apps without a manifest are skipped — login.app /
+-- lock.app are user-flow apps, not launcher entries.
+local function load_apps()
+  local out = {}
+  local children = vfs.list("/apps") or {}
+  for _, raw in ipairs(children) do
+    local name = raw:gsub("/$", "")
+    if name:sub(-4) == ".app" and vfs.isdir("/apps/" .. name) then
+      local mfst_path = "/apps/" .. name .. "/manifest.cfg"
+      local mfst
+      if vfs.exists(mfst_path) then
+        local fn = load(vfs.read_all(mfst_path) or "", "=" .. mfst_path, "t", {})
+        if fn then
+          local ok, t = pcall(fn)
+          if ok and type(t) == "table" then mfst = t end
+        end
+      end
+      if mfst and mfst.entry and not mfst.hidden then
+        local label = mfst.lang_key and lang.t(mfst.lang_key) or mfst.name or name
+        out[#out + 1] = {
+          glyph = mfst.glyph or "📦",
+          label = label,
+          key   = mfst.lang_key,
+          path  = "/apps/" .. name .. "/" .. mfst.entry,
+          order = tonumber(mfst.launcher_order) or 1000,
+        }
+      end
+    end
+  end
+  table.sort(out, function(a, b)
+    if a.order ~= b.order then return a.order < b.order end
+    return a.label < b.label
+  end)
+  return out
+end
+local APPS = load_apps()
 
 local launcher_win
 local function open_launcher()
   if launcher_win and launcher_win.visible then wm:focus(launcher_win); return end
+  -- Refresh the list each time so newly-installed pkg apps appear
+  -- without restarting the desktop.
+  APPS = load_apps()
   local items = {}
-  for _, a in ipairs(APPS) do items[#items + 1] = a.glyph .. "  " .. lang.t(a.key) end
+  for _, a in ipairs(APPS) do
+    items[#items + 1] = a.glyph .. "  " .. (a.key and lang.t(a.key) or a.label)
+  end
   local lst = list_w({
     items = items, width = 22, height = #items,
     on_select = function(_, _, idx)
@@ -61,7 +99,8 @@ local function open_launcher()
     end,
   })
   launcher_win = wm:open{
-    title = "Apps", w = 24, h = #items + 2, x = 2, y = sh - #items - 4,
+    title = lang.t("launcher.title"), w = 24, h = #items + 2,
+    x = 2, y = sh - #items - 4,
     body = lst, minimisable = false, maximisable = false, resizable = false,
     on_close = function() launcher_win = nil end,
   }
@@ -72,25 +111,30 @@ end
 local power_win
 local function open_power_menu()
   if power_win and power_win.visible then wm:close(power_win); power_win = nil; return end
-  local items = { "Lock screen", "Switch user", "Log out", "Restart", "Shut down" }
+  local items = {
+    lang.t("power.lock"), lang.t("power.switch"), lang.t("power.logout"),
+    lang.t("power.reboot"), lang.t("power.shutdown"),
+  }
   local actions = { "lock", "switch", "logout", "reboot", "shutdown" }
   local lst = list_w({
-    items = items, width = 18, height = #items,
+    items = items, width = 22, height = #items,
     on_select = function(_, _, idx)
       if power_win then wm:close(power_win); power_win = nil end
       local a = actions[idx]
       if a == "shutdown" then computer.shutdown(false)
       elseif a == "reboot" then computer.shutdown(true)
-      elseif a == "logout" or a == "switch" then
-        ipc.publish("svc.stop.uid", true)
+      elseif a == "switch" then
+        ipc.publish("ses.switch_user", true)
+      elseif a == "logout" then
+        ipc.publish("ses.logout", true)
       elseif a == "lock" then
         launch("/apps/lock.app/Main.lua")
       end
     end,
   })
   power_win = wm:open{
-    title = "Power", w = 20, h = #items + 2,
-    x = sw - 22, y = sh - #items - 4,
+    title = lang.t("power.title"), w = 24, h = #items + 2,
+    x = sw - 26, y = sh - #items - 4,
     body = lst, minimisable = false, maximisable = false, resizable = false,
     on_close = function() power_win = nil end,
   }
@@ -113,7 +157,7 @@ local status_bar = widget.new("status-bar", {
     local b = self.bounds
     buffer:fill(b.x, b.y, b.w, b.h, " ", SB_FG, SB_BG)
     -- Brand pill (accent bg).
-    local brand = " " .. (_OSVERSION or "OCOS") .. "  user: " .. USER .. " "
+    local brand = " " .. (_OSVERSION or "OCOS") .. "  " .. lang.t("bar.user") .. USER .. " "
     for i = 1, math.min(#brand, b.w - 12) do
       buffer:set(b.x + i - 1, b.y, brand:sub(i, i), 0xFFFFFF, t.palette.accent or 0x4F8AF0)
     end
@@ -146,7 +190,21 @@ local desktop_dir = HOME .. "/Desktop"
 pcall(vfs.mkdir, HOME)
 pcall(vfs.mkdir, desktop_dir)
 local icons_w = ui.widgets.icons({ path = desktop_dir, session = session })
-ipc.subscribe("ui.desktop.refresh", function() icons_w:refresh() end)
+
+-- Track every ipc subscription and background coroutine spawned for
+-- this session so we can tear them down on Switch user / Logout. uid
+-- runs session.on_teardown callbacks before re-entering the login
+-- picker; without them stale handlers fire into a dead widget tree.
+local subs = {}
+local function track_sub(channel, fn)
+  subs[#subs + 1] = ipc.subscribe(channel, fn)
+end
+if session.on_teardown then
+  session.on_teardown(function()
+    for _, h in ipairs(subs) do pcall(ipc.unsubscribe, h) end
+  end)
+end
+track_sub("ui.desktop.refresh", function() icons_w:refresh() end)
 
 -- ---- Toast notifications --------------------------------------------
 
@@ -183,26 +241,31 @@ compositor:invalidate()
 
 -- One-second tick: refresh the bits that show time. clock.lua's own
 -- ticker already invalidates status_clock once a second, so we only
--- need to nudge the taskbar (its mini-clock format hasn't subscribed
--- to clock.tick yet). compositor:invalidate just flips self.dirty —
--- it no longer wipes the prev cell arrays, so the diff-flush still
--- emits only the seconds-digit cells that actually changed.
+-- need to nudge the taskbar. Loop checks session_alive so the tick
+-- coroutine ends when uid tears the session down (Switch user /
+-- Logout) instead of leaking into the next session.
+local session_alive = true
+if session.on_teardown then
+  session.on_teardown(function() session_alive = false end)
+end
 sched.spawn(function()
-  while true do
+  while session_alive do
     sched.sleep(1)
-    tb:invalidate()
-    computer.pushSignal("__ui_tick")
+    if session_alive then
+      tb:invalidate()
+      computer.pushSignal("__ui_tick")
+    end
   end
 end, { name = "desktop-tick", caps = { "*" } })
 
 -- Force a full repaint when the active locale changes so the user
 -- immediately sees the new strings in launcher, taskbar and settings.
-ipc.subscribe("lang.changed", function() compositor:invalidate() end)
+track_sub("lang.changed", function() compositor:invalidate() end)
 
 -- Live wallpaper swap: Settings writes ~/.profile/wallpaper.lua and
 -- publishes this signal; we ask the widget to re-read the file and
 -- mark itself dirty so the next render picks up the new pattern.
-ipc.subscribe("ui.wallpaper.changed", function()
+track_sub("ui.wallpaper.changed", function()
   if wallpaper.reload then wallpaper:reload() end
   compositor:full_repaint()
 end)

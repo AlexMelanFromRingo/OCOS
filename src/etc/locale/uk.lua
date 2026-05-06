@@ -27,6 +27,17 @@ return {
   ["settings.notify.lang"]    = "Мова перемкнена на %s",
   ["settings.lang.title"]     = "Мова",
 
+  ["bar.user"]          = "корист.: ",
+  ["bar.apps"]          = "ПРОГ",
+  ["bar.power"]         = "ЖИВЛ",
+  ["power.title"]       = "Живлення",
+  ["power.lock"]        = "Заблокувати",
+  ["power.switch"]      = "Змінити користувача",
+  ["power.logout"]      = "Вийти",
+  ["power.reboot"]      = "Перезавантажити",
+  ["power.shutdown"]    = "Вимкнути",
+  ["launcher.title"]    = "Програми",
+
   ["ui.close"]          = "Закрити",
   ["ui.cancel"]         = "Скасувати",
   ["ui.ok"]             = "ОК",

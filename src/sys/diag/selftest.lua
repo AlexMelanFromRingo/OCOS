@@ -274,6 +274,22 @@ function M.run()
       .. "2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f")
   end)
 
+  check("X25519 RFC 7748 vectors", function()
+    local x25519 = require("lib.codec.curve25519")
+    local function bin(s) return (s:gsub("..", function(c) return string.char(tonumber(c, 16)) end)) end
+    local function bh(s)  return (s:gsub(".",  function(c) return string.format("%02x", c:byte()) end)) end
+    -- §5.2 vector 1
+    local k = bin("a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4")
+    local u = bin("e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c")
+    assert(bh(x25519.scalarmult(k, u)) ==
+      "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552",
+      "X25519 vector 1 mismatch")
+    -- Iter 1: k_1 = X25519(9, 9)
+    assert(bh(x25519.base("\9" .. string.rep("\0", 31))) ==
+      "422c8e7a6227d7bca1350b3e2bb7279f7897b87bb6854b783c60e80311ae3079",
+      "X25519 base*9 mismatch")
+  end)
+
   check("ui buffer + flush", function()
     local Buffer = require("lib.ui.buffer")
     local fake_ops = {}

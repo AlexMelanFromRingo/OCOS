@@ -7,6 +7,7 @@
 -- pills (green and red) the user can spot at a glance.
 
 local widget = require("lib.ui.widget")
+local lang   = require("lib.lang")
 
 local vfs_for_time = require("k.vfs")
 local function clock_text()
@@ -42,7 +43,7 @@ return function(props)
       buf:fill(b.x, b.y, b.w, b.h, " ", TB_FG, TB_BG)
 
       -- Launcher pill (green) at the very left.
-      local lab = " APPS "
+      local lab = " " .. lang.t("bar.apps") .. " "
       for i = 1, #lab do buf:set(b.x + i, b.y, lab:sub(i, i), 0xFFFFFF, 0x4CAF50) end
       self.chips = { { x1 = b.x + 1, x2 = b.x + #lab, kind = "launcher" } }
       local x = b.x + #lab + 2
@@ -70,7 +71,7 @@ return function(props)
 
       -- Right side: user, clock, power pill (red).
       local user_clock = " " .. (self.props.user or "root") .. "  " .. clock_text() .. " "
-      local pwr  = " POWR "
+      local pwr  = " " .. lang.t("bar.power") .. " "
       local px   = b.x + b.w - #pwr
       local ucx  = px - #user_clock
       for i = 1, #user_clock do

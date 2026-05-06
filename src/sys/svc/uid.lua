@@ -70,6 +70,11 @@ local function run()
 
   local session = { compositor = compositor }
   _G._OCOS_UI_SESSION = session
+  -- Apps register teardown callbacks here so the next session starts
+  -- with a clean slate (no stale ipc subscriptions firing into a dead
+  -- widget tree, no leaked desktop-tick coroutine doubling each frame).
+  session.teardown = {}
+  function session.on_teardown(fn) session.teardown[#session.teardown + 1] = fn end
 
   local function run_app(path, env)
     if not vfs.exists(path) then trace("missing app: " .. path); return end
@@ -86,40 +91,70 @@ local function run()
     end
   end
 
-  local session_env = { USER = "root", HOME = "/home", caps = {"*"} }
+  -- "soft" stop = compositor returned because the user requested
+  -- Switch user / Log out — the outer loop should re-show the login
+  -- picker. "hard" stop = svc.stop.uid (services subsystem killing
+  -- us) — exit the whole service.
+  local mode = "boot"                              -- "boot" | "switch" | "hard"
+  ipc.subscribe("svc.stop.uid",     function() mode = "hard";   compositor:request_stop() end)
+  ipc.subscribe("ses.switch_user",  function() mode = "switch"; compositor:request_stop() end)
+  ipc.subscribe("ses.logout",       function() mode = "switch"; compositor:request_stop() end)
 
-  if not users.empty() then
-    trace("login picker required")
-    local got
-    local sub = ipc.subscribe("ses.login.ok", function(p)
-      got = p; compositor:request_stop()
-    end)
-    run_app("/apps/login.app/Main.lua", {})
-    pcall(function() compositor:run() end)
-    ipc.unsubscribe(sub)
-    if not got then trace("login aborted"); return 1 end
-    session_env.USER = got.user
-    session_env.HOME = got.rec.home or ("/home/" .. got.user)
-    session_env.caps = got.rec.caps or {"*"}
-    trace("login ok: " .. got.user)
+  while mode ~= "hard" do
+    local session_env = { USER = "root", HOME = "/home", caps = {"*"} }
+
+    if not users.empty() then
+      trace("login picker required")
+      local got
+      local sub = ipc.subscribe("ses.login.ok", function(p)
+        got = p; compositor:request_stop()
+      end)
+      mode = "boot"                                -- entering the picker; reset
+      compositor.root.children = {}
+      compositor.stop = false
+      compositor.buffer:invalidate()               -- wipe artefacts from previous session
+      run_app("/apps/login.app/Main.lua", {})
+      pcall(function() compositor:run() end)
+      ipc.unsubscribe(sub)
+      if mode == "hard" then trace("hard stop during login"); return 0 end
+      if not got then trace("login aborted"); return 1 end
+      session_env.USER = got.user
+      session_env.HOME = got.rec.home or ("/home/" .. got.user)
+      session_env.caps = got.rec.caps or {"*"}
+      trace("login ok: " .. got.user)
+    end
+
+    -- Reset the workspace before running the desktop. After a
+    -- previous session the compositor still holds the old desktop
+    -- tree, the WM list and any subscriptions that closed over them.
     compositor.root.children = {}
-    compositor.stop = false
-    compositor.dirty = true
-    compositor:invalidate()
-  end
+    compositor.stop          = false
+    compositor.wm            = nil
+    compositor.buffer:invalidate()
 
-  run_app("/apps/desktop.app/Main.lua", session_env)
-  trace("desktop loaded as " .. session_env.USER)
+    run_app("/apps/desktop.app/Main.lua", session_env)
+    trace("desktop loaded as " .. session_env.USER)
+    mode = "boot"                                  -- ready for next request
+    _G._OCOS_UI_USER = session_env.USER
 
-  ipc.subscribe("svc.stop.uid", function() compositor:request_stop() end)
+    local rok, rerr = xpcall(function() compositor:run() end, function(e)
+      return tostring(e) .. "\n" .. debug.traceback("", 2)
+    end)
+    if not rok then
+      log.error("uid", "compositor.run: " .. tostring(rerr))
+      trace("compositor.run failed: " .. tostring(rerr))
+      error(rerr, 0)                               -- bubble to outer xpcall
+    end
 
-  local rok, rerr = xpcall(function() compositor:run() end, function(e)
-    return tostring(e) .. "\n" .. debug.traceback("", 2)
-  end)
-  if not rok then
-    log.error("uid", "compositor.run: " .. tostring(rerr))
-    trace("compositor.run failed: " .. tostring(rerr))
-    error(rerr, 0)                                -- bubble to outer xpcall
+    -- Run app teardown callbacks (unsubscribe ipc handles, kill
+    -- background coroutines registered via session.on_teardown).
+    for i = #session.teardown, 1, -1 do
+      pcall(session.teardown[i])
+    end
+    session.teardown = {}
+    if mode == "hard" then break end
+    -- mode == "switch": loop back to the login picker.
+    trace("session ended, re-prompting (mode=" .. mode .. ")")
   end
 
   return 0

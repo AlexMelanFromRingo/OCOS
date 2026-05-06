@@ -27,6 +27,17 @@ return {
   ["settings.notify.lang"]    = "Язык переключён на %s",
   ["settings.lang.title"]     = "Язык",
 
+  ["bar.user"]          = "польз.: ",
+  ["bar.apps"]          = "ПРИЛ",
+  ["bar.power"]         = "ПИТН",
+  ["power.title"]       = "Питание",
+  ["power.lock"]        = "Заблокировать",
+  ["power.switch"]      = "Сменить пользователя",
+  ["power.logout"]      = "Выйти",
+  ["power.reboot"]      = "Перезагрузка",
+  ["power.shutdown"]    = "Выключить",
+  ["launcher.title"]    = "Приложения",
+
   ["ui.close"]          = "Закрыть",
   ["ui.cancel"]         = "Отмена",
   ["ui.ok"]             = "ОК",

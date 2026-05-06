@@ -37,7 +37,7 @@ LUA_TEMPLATE = """return {{
 {files}
   }},
   entry       = {entry!r},
-}}
+{extra}}}
 """
 
 
@@ -90,6 +90,12 @@ def read_manifest(src_manifest: Path) -> dict:
         for entry in re.finditer(r'\["?([^"\]]+)"?\]\s*=\s*"([^"]*)"', m.group(1)):
             out[entry.group(1)] = entry.group(2)
         return out
+    def grab_int(name):
+        m = re.search(rf"{name}\s*=\s*(-?\d+)", body)
+        return int(m.group(1)) if m else None
+    def grab_bool(name):
+        m = re.search(rf"{name}\s*=\s*(true|false)", body)
+        return None if not m else (m.group(1) == "true")
     return {
         "id":            grab_str("id"),
         "name":          grab_str("name"),
@@ -103,6 +109,13 @@ def read_manifest(src_manifest: Path) -> dict:
         "caps_required": grab_array("caps_required"),
         "caps_optional": grab_array("caps_optional"),
         "include":       grab_array("include") or ["**"],
+        # Optional launcher/UI metadata. Forwarded verbatim into the
+        # output manifest so pkg-installed apps integrate with the
+        # desktop launcher (glyph + localization + sort order).
+        "glyph":         grab_str("glyph"),
+        "lang_key":      grab_str("lang_key"),
+        "launcher_order": grab_int("launcher_order"),
+        "hidden":        grab_bool("hidden"),
     }
 
 
@@ -144,6 +157,17 @@ def main() -> int:
         shutil.copyfile(f, dest)
         file_entries.append(f'    [{lua_str(rel)}] = {{ sha256 = {lua_str(digest)} }},')
 
+    extra_lines = []
+    if info["glyph"]:
+        extra_lines.append(f"  glyph       = {lua_str(info['glyph'])},")
+    if info["lang_key"]:
+        extra_lines.append(f"  lang_key    = {lua_str(info['lang_key'])},")
+    if info["launcher_order"] is not None:
+        extra_lines.append(f"  launcher_order = {info['launcher_order']},")
+    if info["hidden"] is not None:
+        extra_lines.append(f"  hidden      = {str(info['hidden']).lower()},")
+    extra_block = ("\n".join(extra_lines) + "\n") if extra_lines else ""
+
     rendered = LUA_TEMPLATE.format(
         id            = info["id"],
         name          = info["name"],
@@ -157,6 +181,7 @@ def main() -> int:
         caps_required = lua_array(info["caps_required"]),
         caps_optional = lua_array(info["caps_optional"]),
         files         = "\n".join(file_entries),
+        extra         = extra_block,
     )
     (out / "manifest.cfg").write_text(rendered, encoding="utf-8")
     print(f"pack: wrote {out} ({len(files)} files)")

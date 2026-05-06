@@ -94,6 +94,11 @@ end
 
 local function on_scroll(p)
   -- p comes from oc.signal.scroll: {addr, x, y, dir, player}
+  -- The TTY scrollback paints straight to the gpu, so while the GUI
+  -- compositor owns the screen we have to ignore wheel events here —
+  -- otherwise scrolling on the desktop overwrites whatever the
+  -- compositor just rendered.
+  if not input_gate("scroll") then return end
   local dir = p[4] or 0
   if dir == 0 then return end
   local total = #sb_lines

@@ -31,6 +31,18 @@ return {
   ["settings.notify.lang"]    = "Switched to %s",
   ["settings.lang.title"]     = "Language",
 
+  -- Status bar / taskbar
+  ["bar.user"]          = "user: ",
+  ["bar.apps"]          = "APPS",
+  ["bar.power"]         = "POWR",
+  ["power.title"]       = "Power",
+  ["power.lock"]        = "Lock screen",
+  ["power.switch"]      = "Switch user",
+  ["power.logout"]      = "Log out",
+  ["power.reboot"]      = "Restart",
+  ["power.shutdown"]    = "Shut down",
+  ["launcher.title"]    = "Apps",
+
   -- Generic UI
   ["ui.close"]          = "Close",
   ["ui.cancel"]         = "Cancel",

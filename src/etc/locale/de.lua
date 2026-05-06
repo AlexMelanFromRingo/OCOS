@@ -27,6 +27,17 @@ return {
   ["settings.notify.lang"]    = "Sprache geändert: %s",
   ["settings.lang.title"]     = "Sprache",
 
+  ["bar.user"]          = "Benutzer: ",
+  ["bar.apps"]          = "APPS",
+  ["bar.power"]         = "AUS",
+  ["power.title"]       = "Energie",
+  ["power.lock"]        = "Bildschirm sperren",
+  ["power.switch"]      = "Benutzer wechseln",
+  ["power.logout"]      = "Abmelden",
+  ["power.reboot"]      = "Neu starten",
+  ["power.shutdown"]    = "Herunterfahren",
+  ["launcher.title"]    = "Anwendungen",
+
   ["ui.close"]          = "Schließen",
   ["ui.cancel"]         = "Abbrechen",
   ["ui.ok"]             = "OK",
