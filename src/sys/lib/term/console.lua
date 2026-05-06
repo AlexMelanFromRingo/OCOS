@@ -213,6 +213,39 @@ end
 local input_gate = function() return true end
 function M.set_input_gate(fn) input_gate = fn or function() return true end end
 
+-- Masked password reader — shared between sessiond's login(), passwd,
+-- useradd and setup-root so all four handle backspace identically.
+-- Backspace must repaint the cell beneath the cursor with a space and
+-- step the cursor back one column; otherwise the visible "*" stays on
+-- screen even though the buffered password drops a char.
+function M.read_password(prompt)
+  if prompt then M.write(prompt) end
+  local sched = require("k.sched")
+  local buf = {}
+  while true do
+    local ev = sched.wait(function(name) return name == "key_down" end)
+    if not ev then return nil end
+    local _, char, code = ev.args[1], ev.args[2], ev.args[3]
+    if code == 28 or code == 156 then        -- Enter / NumpadEnter
+      M.write("\n")
+      return table.concat(buf)
+    elseif code == 14 then                   -- Backspace
+      if #buf > 0 then
+        buf[#buf] = nil
+        local cx, cy = M.cursor()
+        if cx > 1 then
+          M.set_cursor(cx - 1, cy)
+          gpu.set(cx - 1, cy, " ")
+          M.set_cursor(cx - 1, cy)
+        end
+      end
+    elseif char and char >= 32 and char < 127 then
+      buf[#buf + 1] = string.char(char)
+      M.write("*")
+    end
+  end
+end
+
 local function key_filter(name)
   if (name == "key_down" or name == "clipboard") and not input_gate(name) then
     return false

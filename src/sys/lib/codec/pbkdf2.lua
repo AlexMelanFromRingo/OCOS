@@ -20,13 +20,32 @@ local function xor_str(a, b)
   return table.concat(out)
 end
 
+-- 5000 iterations of HMAC-SHA256 in pure Lua takes ~3-5 seconds on a
+-- T1 OC CPU, which is right at the edge of the 5-second yield watchdog
+-- the kernel kills coroutines for. Yield every 256 iterations so login
+-- (and the installer's setup-root path) survives the budget regardless
+-- of CPU tier or whether a data card is accelerating SHA-256.
+local function yield()
+  local sched = package.loaded["k.sched"]
+  if sched and sched.sleep then
+    pcall(sched.sleep, 0)
+    return
+  end
+  -- OpenOS / installer context — computer.pullSignal(0) is the
+  -- canonical way to relinquish the call budget without sleeping.
+  if _G.computer and _G.computer.pullSignal then
+    pcall(_G.computer.pullSignal, 0)
+  end
+end
+
 function M.derive_bytes(password, salt, iters)
   -- We only need 32 bytes of output (one block of HMAC-SHA256).
   local U = hmac.sha256(password, salt .. int_be32(1))
   local T = U
-  for _ = 2, iters do
+  for i = 2, iters do
     U = hmac.sha256(password, U)
     T = xor_str(T, U)
+    if i % 256 == 0 then yield() end
   end
   return T
 end

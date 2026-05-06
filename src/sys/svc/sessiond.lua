@@ -38,28 +38,11 @@ local function print_motd(streams)
   h:close()
 end
 
-local function read_password()
-  local buf = {}
-  while true do
-    local ev = sched.wait(function(name) return name == "key_down" end)
-    if ev then
-      local _, char, code = ev.args[1], ev.args[2], ev.args[3]
-      if code == 28 then console.writeln(""); return table.concat(buf) end
-      if code == 14 then if #buf > 0 then buf[#buf] = nil end
-      elseif char and char >= 32 and char < 127 then
-        buf[#buf + 1] = string.char(char); console.write("*")
-      end
-    end
-  end
-end
-
 local function login()
   for _ = 1, 3 do
-    console.write("login: ")
-    local user = console.read_line()
+    local user = console.read_line("login: ")
     if not user or user == "" then return nil end
-    console.write("password: ")
-    local pw = read_password()
+    local pw = console.read_password("password: ")
     if users.verify(user, pw) then
       audit.write({ kind = "login.ok", user = user })
       return users.get(user), user

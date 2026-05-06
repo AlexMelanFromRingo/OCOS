@@ -15,7 +15,6 @@
 local args, env = ...
 local users   = require("lib.auth.users")
 local console = require("lib.term.console")
-local sched   = require("k.sched")
 local vfs     = require("k.vfs")
 
 if env.USER ~= "root" and not users.is_admin(env.USER) then
@@ -25,23 +24,9 @@ end
 
 if users.get("root") then
   io.stderr:write("setup-root: root already exists in /etc/passwd\n")
-  io.stderr:write("            use `passwd root` to change the password\n")
+  io.stderr:write("            use `passwd root` to change the password,\n")
+  io.stderr:write("            or `userdel root` first if you really want a clean slate.\n")
   return 1
-end
-
-local function masked()
-  local buf = {}
-  while true do
-    local ev = sched.wait(function(name) return name == "key_down" end)
-    if ev then
-      local _, char, code = ev.args[1], ev.args[2], ev.args[3]
-      if code == 28 then console.write("\n"); return table.concat(buf) end
-      if code == 14 then if #buf > 0 then buf[#buf] = nil end
-      elseif char and char >= 32 and char < 127 then
-        buf[#buf + 1] = string.char(char); console.write("*")
-      end
-    end
-  end
 end
 
 console.writeln("OCOS root setup")
@@ -49,8 +34,8 @@ console.writeln("---------------")
 console.writeln("Pick a password. After this is done /etc/security.cfg")
 console.writeln("flips to enforce=true and only admins can create users.")
 console.writeln("")
-console.write("root password: "); local p1 = masked()
-console.write("retype:        "); local p2 = masked()
+local p1 = console.read_password("root password: ")
+local p2 = console.read_password("retype:        ")
 if p1 ~= p2 then io.stderr:write("setup-root: passwords don't match\n"); return 1 end
 if #p1 < 6 then io.stderr:write("setup-root: password too short (need >= 6 chars)\n"); return 1 end
 
