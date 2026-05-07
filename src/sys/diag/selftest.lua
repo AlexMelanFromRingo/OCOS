@@ -385,6 +385,26 @@ function M.run()
     assert(not rsa.verify_pss(pub2, "sha256", h, "\1" .. sig2:sub(2)), "PSS accepted tampered sig")
   end)
 
+  check("robot path snake covers W×H exactly once", function()
+    -- The "even-width snake doesn't come back" bug used to trip up
+    -- robot scripts here because the loop was step-counting instead
+    -- of cell-iterating. The iterator-based snake covers each cell
+    -- exactly once for any (W, H) combination, including even W.
+    local snake = require("lib.robot.path").snake
+    for _, dims in ipairs({ {1,1}, {1,4}, {3,3}, {4,4}, {5,4}, {4,5}, {7,1}, {2,7} }) do
+      local W, H = dims[1], dims[2]
+      local seen = {}
+      local count = 0
+      for x, z in snake(W, H) do
+        local k = (z - 1) * W + (x - 1)
+        assert(not seen[k], string.format("duplicate (%d,%d) for %dx%d", x, z, W, H))
+        seen[k] = true
+        count = count + 1
+      end
+      assert(count == W * H, string.format("snake %dx%d covered %d / %d", W, H, count, W * H))
+    end
+  end)
+
   check("ECDSA-P256 module loads", function()
     -- The full verify takes 30-60 s of pure-Lua mod-mul on the
     -- simulated T1 here, which trips the 5 s yield watchdog without a

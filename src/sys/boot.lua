@@ -9,7 +9,7 @@
 
 local boot_addr, read_all = ...
 
-_G._OSVERSION = "OCOS 0.5.1"
+_G._OSVERSION = "OCOS 0.5.2"
 _G._OCOS = { boot_addr = boot_addr, started_at = computer.uptime() }
 
 -- ---- Minimal require rooted at /sys/ ------------------------------------
