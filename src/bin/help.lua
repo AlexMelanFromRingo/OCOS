@@ -47,11 +47,6 @@ local sections = {
       "curl [-X method] [-H 'K: V'] [-d body] [-o file] [-L] [--tls-pure] [-k] <url>",
       "git clone [-b <branch>] <github-url> [<dest>]" }
   },
-  { "Robot",
-    { "farm [-w W] [-h H] [--passes N | --forever]",
-      "mine [-w W] [-l L] [-d D]",
-      "sort --rules <file> [--passes N | --forever]" }
-  },
   { "Documentation",
     { "help [--plain]", "man <name>", "less [file]", "more [file]" }
   },

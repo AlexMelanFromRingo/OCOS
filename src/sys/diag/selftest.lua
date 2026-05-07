@@ -312,19 +312,16 @@ function M.run()
   end)
 
   check("crypto modules load", function()
-    -- Pre-load every crypto module so subsequent checks find them in
-    -- _require's cache. Without this warm-up the FIRST `require` of
-    -- a module that pulls in many transitive deps (tls.lua loads
-    -- ~12 codecs at top level) flakes out on the simulated T1 here:
-    -- one of the read_all() invokes to the boot filesystem times out
-    -- silently and the require falls through to "module not found".
-    -- It only manifests in ocvm; on real OC it's never been seen.
-    assert(require("lib.codec.bigint"))
-    assert(require("lib.codec.rsa"))
-    assert(require("lib.codec.ecdsa"))
-    assert(require("lib.codec.asn1"))
-    assert(require("lib.codec.x509"))
-    assert(require("lib.codec.hkdf"))
+    -- Pre-load each crypto module with a yield in between so the boot
+    -- watchdog doesn't trip on the cumulative parse + chunk-execute
+    -- cost when these are loaded back-to-back (~1 s each on the
+    -- ocvm simulated T1, > 5 s in total without breaks).
+    assert(require("lib.codec.bigint"));    sched.sleep(0)
+    assert(require("lib.codec.rsa"));       sched.sleep(0)
+    assert(require("lib.codec.ecdsa"));     sched.sleep(0)
+    assert(require("lib.codec.asn1"));      sched.sleep(0)
+    assert(require("lib.codec.x509"));      sched.sleep(0)
+    assert(require("lib.codec.hkdf"));      sched.sleep(0)
     assert(require("lib.net.tls"))
   end)
   check("TLS 1.3 ClientHello build/parse round-trip", function()
