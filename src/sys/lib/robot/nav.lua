@@ -157,12 +157,34 @@ function Nav:goto_xz(tx, tz, retry_swing)
   return true
 end
 
-function Nav:goto_y(ty)
+-- Move vertically to `ty`. With retry_swing=true, attempt to break a
+-- blocking block above/below up to MAX_VERTICAL_SWINGS times before
+-- giving up — protects against gravel re-falling between iterations
+-- and cobble forming from lava+water meeting in the column above the
+-- robot's return path.
+local MAX_VERTICAL_SWINGS = 8
+function Nav:goto_y(ty, retry_swing)
   while self.y < ty do
-    local ok, err = self:up(); if not ok then return false, err end
+    local ok, err = self:up()
+    if not ok and retry_swing then
+      for _ = 1, MAX_VERTICAL_SWINGS do
+        pcall(self.r.swingUp)
+        ok, err = self:up()
+        if ok then break end
+      end
+    end
+    if not ok then return false, err end
   end
   while self.y > ty do
-    local ok, err = self:down(); if not ok then return false, err end
+    local ok, err = self:down()
+    if not ok and retry_swing then
+      for _ = 1, MAX_VERTICAL_SWINGS do
+        pcall(self.r.swingDown)
+        ok, err = self:down()
+        if ok then break end
+      end
+    end
+    if not ok then return false, err end
   end
   return true
 end
@@ -172,17 +194,26 @@ function Nav:goto_xyz(tx, ty, tz, retry_swing)
   -- horizontals first so we don't sink onto our chest before placing
   -- back its tools.
   if ty > self.y then
-    if not self:goto_y(ty) then return false end
+    if not self:goto_y(ty, retry_swing) then return false end
     return self:goto_xz(tx, tz, retry_swing)
   else
     local ok = self:goto_xz(tx, tz, retry_swing); if not ok then return false end
-    return self:goto_y(ty)
+    return self:goto_y(ty, retry_swing)
   end
 end
 
-function Nav:home()
-  local ok = self:goto_xyz(0, 0, 0, false); if not ok then return false end
+function Nav:home(retry_swing)
+  local ok = self:goto_xyz(0, 0, 0, retry_swing); if not ok then return false end
   return self:face(0)
+end
+
+-- Manhattan distance from current position back to (0, 0, 0). Useful
+-- for "do I have enough energy to get home?" checks: each step costs
+-- a known number of energy units (configurable per server, ~50 in
+-- vanilla OC), so this × cost + reserve = the energy floor below
+-- which the robot must abandon work and surface.
+function Nav:distance_home()
+  return math.abs(self.x) + math.abs(self.y) + math.abs(self.z)
 end
 
 return M

@@ -79,6 +79,6 @@ for step = 1, length do
 end
 
 if deposit then dump_at_home() end
-nav:home()
+nav:home(true)
 io.stdout:write("tunnel: done — " .. length .. " cells\n")
 return 0

@@ -52,14 +52,14 @@ end
 local function deposit()
   io.stdout:write("mine: surfacing to dump\n")
   local home_y = nav.y
-  nav:goto_y(0)                                      -- back up to surface
-  nav:goto_xz(0, 0, false)
+  nav:goto_y(0, true)                                -- break through cobble if any
+  nav:goto_xz(0, 0, true)
   nav:face(0)
   local size = (r.inventorySize and r.inventorySize()) or 16
   for s = 1, size do
     if (r.count(s) or 0) > 0 then r.select(s); r.dropDown(64) end
   end
-  nav:goto_y(home_y)                                 -- dive back to layer
+  nav:goto_y(home_y, true)
 end
 
 local function dig_cell()
@@ -87,9 +87,9 @@ for layer = 1, D do
     if inventory_full() then deposit() end
     sched.sleep(0)
   end
-  nav:goto_xz(0, 0, false)
+  nav:goto_xz(0, 0, true)
   nav:face(0)
 end
-nav:home()
+nav:home(true)
 io.stdout:write("mine: done\n")
 return 0
