@@ -728,6 +728,74 @@ return {
       "farm.lua still present after uninstall")
   end)
 
+  -- Full HTTP install path through the configured GitHub registry.
+  -- Skipped automatically when the emulator has no internet card or
+  -- the card has HTTP disabled. On a real OC robot with an internet
+  -- upgrade this exercises end-to-end: index.cfg fetch → manifest
+  -- fetch → per-file fetch → sha256 verify → install_dir.
+  check("pkg install ocos.robot via HTTP registry", function()
+    local internet = require("drv.internet")
+    skip_if(not internet.has_internet(), "no internet card / HTTP disabled")
+    local registry = require("lib.pkg.registry")
+    local install  = require("lib.pkg.install")
+    local db       = require("lib.pkg.db")
+    -- Make sure we're not poisoned by an earlier test's install.
+    pcall(db.remove, "ocos.robot")
+    local base, version = registry.resolve("ocos.robot")
+    assert(base, "registry resolve: " .. tostring(version))
+    -- We can't let registry.install land in /bin (readonly under ocvm),
+    -- so do the staging + prefix rewrite by hand and finish with
+    -- install.install_dir. Mirrors what registry.install does.
+    local manifest_url = base:gsub("/+$", "") ..
+      "/ocos.robot/" .. version .. "/manifest.cfg"
+    local body, status = internet.http_request(manifest_url, { timeout = 30 })
+    assert(body, "fetch manifest: " .. tostring(status))
+    -- Find a writable mount big enough for the staged copy.
+    local mp
+    for _, m in ipairs(vfs.mounts()) do
+      if m.prefix:sub(1, 5) == "/mnt/" then mp = m.prefix; break end
+    end
+    assert(mp, "no writable mount for staging")
+    local stage = mp .. "/pkg-http-stage"
+    local install_root = mp .. "/pkg-http-install/"
+    pcall(vfs.mkdir, stage)
+    pcall(vfs.mkdir, mp .. "/pkg-http-install")
+    -- Rewrite the prefix before sha256 enters the picture (install_dir
+    -- only verifies the file checksums, not the manifest itself).
+    local patched, n = body:gsub('prefix(%s*=%s*)["\'][^"\']*["\']',
+      "prefix%1\"" .. install_root .. "\"", 1)
+    assert(n == 1, "manifest prefix not rewritten")
+    vfs.write_all(stage .. "/manifest.cfg", patched)
+    -- Download each declared file. We parse the names out of the
+    -- manifest string with a regex to avoid running the Lua chunk in
+    -- a sandboxed env here.
+    local count = 0
+    for rel in patched:gmatch('%["([^"]+)"%]%s*=%s*{%s*sha256') do
+      local url = base:gsub("/+$", "") .. "/ocos.robot/" .. version .. "/" .. rel
+      local fbody, fstatus = internet.http_request(url, { timeout = 30 })
+      assert(fbody, "fetch " .. rel .. ": " .. tostring(fstatus))
+      -- ensure parent dir
+      local cur = stage
+      for seg in rel:gmatch("([^/]+)/") do
+        cur = cur .. "/" .. seg
+        if not vfs.exists(cur) then pcall(vfs.mkdir, cur) end
+      end
+      vfs.write_all(stage .. "/" .. rel, fbody)
+      count = count + 1
+    end
+    assert(count >= 9, "expected ≥9 files in ocos.robot, got " .. count)
+    local mfst, err = install.install_dir(stage, { force = true })
+    assert(mfst, "install: " .. tostring(err))
+    assert(mfst.id == "ocos.robot", "wrong id: " .. tostring(mfst.id))
+    assert(mfst.version == version, "version mismatch")
+    for _, name in ipairs({ "farm", "quarry", "tunnel" }) do
+      local p = install_root .. "bin/" .. name .. ".lua"
+      assert(vfs.exists(p), p .. " missing after install")
+    end
+    assert(install.verify("ocos.robot"), "verify after HTTP install failed")
+    assert(install.uninstall("ocos.robot"), "uninstall after HTTP install")
+  end)
+
   for _, e in ipairs(log.entries()) do
     results[#results + 1] = string.format("[%8.3f] %s %s: %s", e.time, e.level, e.tag, e.msg)
   end
