@@ -678,6 +678,56 @@ return {
     pcall(vfs.remove, mp .. "/pkg-test-dst")
   end)
 
+  -- End-to-end install of the actual ocos.robot package from the staged
+  -- registry copy. tools/test-boot.sh drops dist/registry/ocos.robot/X
+  -- into <writable mount>/pkg-stage/ocos.robot before booting. We then
+  -- rewrite the manifest's prefix from "/" to a path under the writable
+  -- mount (ocvm marks any host-path filesystem readonly, so installing
+  -- straight into /bin would fail in the emulator while working fine
+  -- on a real OC robot). This exercises everything install_dir touches:
+  -- sha256 verify, prefix copy, db.put, the works.
+  check("pkg install ocos.robot (local registry)", function()
+    -- Scan every /mnt/* prefix because the staged copy lives on a
+    -- specific persistent filesystem, not whichever mount happens to
+    -- come first in find_writable_mount (which prefers tmpfs).
+    local mp, stage
+    for _, m in ipairs(vfs.mounts()) do
+      if m.prefix:sub(1, 5) == "/mnt/" then
+        local candidate = m.prefix .. "/pkg-stage/ocos.robot"
+        if vfs.exists(candidate .. "/manifest.cfg") then
+          mp, stage = m.prefix, candidate
+          break
+        end
+      end
+    end
+    skip_if(not stage, "no staged registry copy under /mnt/*")
+    local install = require("lib.pkg.install")
+    local db      = require("lib.pkg.db")
+    local install_root = mp .. "/pkg-test-install/"
+    pcall(vfs.mkdir, mp .. "/pkg-test-install")
+    -- Rewrite prefix so install lands in writable territory.
+    local manifest_src = vfs.read_all(stage .. "/manifest.cfg")
+    assert(manifest_src, "cannot read staged manifest")
+    -- pack.py uses Python's repr() which prefers single quotes, so
+    -- the prefix line may be either 'prefix = "/"' or "prefix = '/'".
+    local patched, n = manifest_src:gsub('prefix(%s*=%s*)["\'][^"\']*["\']',
+      "prefix%1\"" .. install_root .. "\"", 1)
+    assert(n == 1, "prefix line not rewritten")
+    vfs.write_all(stage .. "/manifest.cfg", patched)
+    local mfst, err = install.install_dir(stage, { force = true })
+    assert(mfst, "install: " .. tostring(err))
+    assert(mfst.id == "ocos.robot", "wrong id: " .. tostring(mfst.id))
+    for _, name in ipairs({ "farm", "quarry", "mine", "tunnel", "sort", "tree", "fill", "stair", "build" }) do
+      local p = install_root .. "bin/" .. name .. ".lua"
+      assert(vfs.exists(p), p .. " missing after install")
+    end
+    assert(install.verify("ocos.robot"), "verify after install failed")
+    assert(db.get("ocos.robot"), "db.get returned nil after install")
+    assert(install.uninstall("ocos.robot"), "uninstall failed")
+    assert(not vfs.exists(install_root .. "bin/farm.lua"),
+      "farm.lua still present after uninstall")
+  end)
+
   for _, e in ipairs(log.entries()) do
     results[#results + 1] = string.format("[%8.3f] %s %s: %s", e.time, e.level, e.tag, e.msg)
   end

@@ -16,6 +16,17 @@ for d in "$INSTANCE"/*/; do
   esac
 done
 
+# Stage the ocos.robot package into the writable FS so the selftest
+# can exercise `install.install_dir` against a real package directory
+# (not a synthetic one). The 88895671-... UUID is the writable
+# "ocos-data" filesystem in emulator/instance/client.cfg.
+WRITABLE_FS="$INSTANCE/88895671-49ba-f22d-bef9-1db9a5438b71"
+PKG_STAGE_SRC="$ROOT/dist/registry/ocos.robot/0.1.1"
+if [[ -d "$PKG_STAGE_SRC" && -d "$WRITABLE_FS" ]]; then
+  mkdir -p "$WRITABLE_FS/pkg-stage/ocos.robot"
+  cp -r "$PKG_STAGE_SRC/." "$WRITABLE_FS/pkg-stage/ocos.robot/"
+fi
+
 # `script` gives ocvm a real PTY (avoids 0×0 gpu); the OS shuts down on
 # completion so the outer timeout is just a stuck-boot guard.
 # 180s budget — RSA verify on 1024-bit takes ~10-30s of pure-Lua
