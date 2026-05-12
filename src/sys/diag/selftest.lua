@@ -796,6 +796,117 @@ return {
     assert(install.uninstall("ocos.robot"), "uninstall after HTTP install")
   end)
 
+  check("lib.getopt parses GNU/POSIX option forms", function()
+    local getopt = require("lib.getopt")
+    local spec = {
+      O = "value", q = "flag", S = "flag",
+      o = "value", output = "o",
+      v = "flag",  verbose = "v",
+      ["no-check-certificate"] = "flag",
+    }
+    -- Short cluster + separated value.
+    local opts, pos, err = getopt.parse({ "-qO", "file.txt", "URL" }, spec)
+    assert(not err, "cluster: " .. tostring(err))
+    assert(opts.q == true and opts.O == "file.txt", "cluster opts")
+    assert(pos[1] == "URL" and #pos == 1, "cluster pos")
+    -- Short cluster + inline value (-Ofile).
+    opts, pos = getopt.parse({ "-qOfile.txt", "URL" }, spec)
+    assert(opts.q == true and opts.O == "file.txt", "inline value")
+    -- Stdin marker `-`.
+    opts, pos = getopt.parse({ "-v", "-", "x" }, spec)
+    assert(opts.v == true, "v")
+    assert(pos[1] == "-" and pos[2] == "x", "stdin marker stays positional")
+    -- `--` ends opt parsing.
+    opts, pos = getopt.parse({ "-v", "--", "-x", "-y" }, spec)
+    assert(opts.v == true, "before --")
+    assert(pos[1] == "-x" and pos[2] == "-y", "after -- positional")
+    -- --long=value
+    opts = getopt.parse({ "--output=foo", "url" }, spec)
+    assert(opts.o == "foo", "long=value via alias")
+    -- Unknown option.
+    local _, _, err2 = getopt.parse({ "-z" }, spec)
+    assert(err2 and err2:find("unknown"), "unknown is flagged")
+  end)
+
+  check("coreutils smoke (cat / head / tail / wc / grep)", function()
+    local mp; for _, m in ipairs(vfs.mounts()) do
+      if m.prefix:sub(1, 5) == "/mnt/" then mp = m.prefix; break end
+    end
+    assert(mp, "no writable mount")
+    local f = mp .. "/coreutils-smoke.txt"
+    vfs.write_all(f, "alpha\nbeta\ngamma\ndelta\nepsilon\n")
+
+    local stream = require("std.stream")
+    -- Each /bin/* tool is loaded by exec.build_env into an env whose
+    -- `io` is process-bound; _G.io itself is nil. To run a tool inline
+    -- here we have to construct an env that mimics what exec sets up:
+    -- a per-call `io` table with the capture stream, falling back to
+    -- the real _ENV for everything else (string, require, etc.).
+    local stderr_silent = stream.new {
+      _write = function(self) return self end, _read = function() return nil end,
+    }
+    local function run(path, argv, stdin_text)
+      local out = {}
+      local test_stdout = stream.new {
+        _write = function(self, s) out[#out + 1] = s; return self end,
+        _read  = function() return nil end,
+      }
+      local test_stdin = stdin_text and stream.new {
+        _read = function() local s = stdin_text; stdin_text = nil; return s end,
+      } or stream.new { _read = function() return nil end }
+      local test_io = {
+        stdout = test_stdout,
+        stdin  = test_stdin,
+        stderr = stderr_silent,
+        write  = function(s) test_stdout:write(tostring(s)) end,
+      }
+      local function test_print(...)
+        local n = select("#", ...)
+        for i = 1, n do
+          test_stdout:write(tostring(select(i, ...)))
+          if i < n then test_stdout:write("\t") end
+        end
+        test_stdout:write("\n")
+      end
+      local env = setmetatable({
+        io = test_io, print = test_print, _SHELL = { PWD = "/" },
+      }, { __index = _ENV })
+      env._ENV = env
+      local src = vfs.read_all(path)
+      local fn = assert(load(src, "=" .. path, "t", env))
+      local ok, rc = pcall(fn, argv, { PWD = "/" })
+      assert(ok, path .. " crashed: " .. tostring(rc))
+      return rc or 0, table.concat(out)
+    end
+
+    local rc, body = run("/bin/cat.lua", { f })
+    assert(rc == 0 and body == "alpha\nbeta\ngamma\ndelta\nepsilon\n", "cat full file")
+
+    rc, body = run("/bin/head.lua", { "-n", "2", f })
+    assert(rc == 0 and body == "alpha\nbeta\n", "head -n 2: " .. body)
+    rc, body = run("/bin/head.lua", { "-2", f })
+    assert(rc == 0 and body == "alpha\nbeta\n", "head -2 legacy")
+
+    rc, body = run("/bin/tail.lua", { "-n", "2", f })
+    assert(rc == 0 and body == "delta\nepsilon\n", "tail -n 2: " .. body)
+
+    rc, body = run("/bin/grep.lua", { "et", f })
+    assert(rc == 0 and body:find("beta") and not body:find("alpha"), "grep et")
+    rc, body = run("/bin/grep.lua", { "-c", "a", f })
+    assert(rc == 0 and tonumber(body:match("(%d+)")) >= 3, "grep -c: " .. body)
+    rc, body = run("/bin/grep.lua", { "-i", "ALPHA", f })
+    assert(rc == 0 and body:find("alpha"), "grep -i case-fold")
+
+    rc, body = run("/bin/wc.lua", { f })
+    local L, W, B = body:match("(%d+)%s+(%d+)%s+(%d+)")
+    assert(tonumber(L) == 5, "wc lines: " .. tostring(L))
+    assert(tonumber(B) > 20, "wc bytes plausible")
+    rc, body = run("/bin/wc.lua", { "-l", f })
+    assert(body:find("5"), "wc -l only column")
+
+    pcall(vfs.remove, f)
+  end)
+
   for _, e in ipairs(log.entries()) do
     results[#results + 1] = string.format("[%8.3f] %s %s: %s", e.time, e.level, e.tag, e.msg)
   end

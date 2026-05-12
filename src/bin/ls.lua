@@ -47,37 +47,34 @@ local FG = {
 }
 
 local long, all, want_color = false, false, "auto"
+local end_of_opts = false
 local positional = {}
-for i = 1, #args do
-  local a = args[i]
-  if     a == "-l" then long = true
-  elseif a == "-a" then all = true
-  elseif a == "-la" or a == "-al" then long, all = true, true
+for _, a in ipairs(args) do
+  if end_of_opts then positional[#positional + 1] = a
+  elseif a == "--" then end_of_opts = true
   elseif a == "--color=always" then want_color = "always"
   elseif a == "--color=never"  then want_color = "never"
-  elseif a == "--color"        then want_color = "always"
-  elseif a:sub(1, 1) == "-" then io.stderr:write("ls: unknown option: " .. a .. "\n"); return 2
+  elseif a == "--color" or a == "--color=auto" then want_color = "auto"
+  elseif a:sub(1, 1) == "-" and #a > 1 then
+    -- Bundle: -la, -al, -laQ, etc. Walk each character; unknown
+    -- chars fail the whole invocation rather than getting silently
+    -- treated as a path (matches GNU coreutils).
+    for j = 2, #a do
+      local c = a:sub(j, j)
+      if c == "l" then long = true
+      elseif c == "a" then all = true
+      else io.stderr:write("ls: unknown option: -" .. c .. "\n"); return 2 end
+    end
   else positional[#positional + 1] = a end
 end
 
-local path = positional[1] or env.PWD or "/"
-if path:sub(1, 1) ~= "/" then path = vfs.canonical((env.PWD or "/") .. "/" .. path) end
-
-if not vfs.exists(path) then
-  io.stderr:write("ls: not found: " .. path .. "\n"); return 1
+local function resolve_path(p)
+  if not p then return env.PWD or "/" end
+  if p:sub(1, 1) ~= "/" then p = vfs.canonical((env.PWD or "/") .. "/" .. p) end
+  return p
 end
-if not vfs.isdir(path) then print(path); return 0 end
 
-local entries, err = vfs.list(path)
-if not entries then io.stderr:write("ls: " .. tostring(err) .. "\n"); return 1 end
-
--- OC's list returns names with trailing "/" for directories. Strip the
--- suffix here so callers get plain names; we re-derive the type via
--- vfs.isdir() below.
-for i, name in ipairs(entries) do
-  entries[i] = (name:gsub("/$", ""))
-end
-table.sort(entries)
+if #positional == 0 then positional[1] = env.PWD or "/" end
 
 local out = io.stdout
 local use_color = (want_color == "always") or (want_color == "auto" and (out._isatty or out._ansi))
@@ -122,11 +119,35 @@ local function emit_long(name, kind, full)
   emit(name, kind)
 end
 
-for _, name in ipairs(entries) do
-  if all or name:sub(1, 1) ~= "." then
-    local full = path == "/" and ("/" .. name) or (path .. "/" .. name)
-    local kind = classify(name, full)
-    if long then emit_long(name, kind, full) else emit(name, kind) end
+local function list_one(path, show_header)
+  if not vfs.exists(path) then
+    io.stderr:write("ls: not found: " .. path .. "\n"); return 1
   end
+  if not vfs.isdir(path) then
+    print(path); return 0
+  end
+  local entries, err = vfs.list(path)
+  if not entries then
+    io.stderr:write("ls: " .. tostring(err) .. "\n"); return 1
+  end
+  for i, name in ipairs(entries) do entries[i] = (name:gsub("/$", "")) end
+  table.sort(entries)
+  if show_header then io.write(path .. ":\n") end
+  for _, name in ipairs(entries) do
+    if all or name:sub(1, 1) ~= "." then
+      local full = path == "/" and ("/" .. name) or (path .. "/" .. name)
+      local kind = classify(name, full)
+      if long then emit_long(name, kind, full) else emit(name, kind) end
+    end
+  end
+  return 0
 end
-return 0
+
+local rc = 0
+for i, p in ipairs(positional) do
+  local resolved = resolve_path(p)
+  if i > 1 then io.write("\n") end
+  local code = list_one(resolved, #positional > 1)
+  if code ~= 0 then rc = code end
+end
+return rc
