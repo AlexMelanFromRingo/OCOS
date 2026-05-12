@@ -69,7 +69,14 @@ end
 function Compositor:render()
   if not (self.dirty or any_dirty(self.root)) then return end
   self.root:draw(self.buffer, self.theme)
+  -- On T3 GPUs the driver redirects every gpu.set/fill into an
+  -- off-screen buffer while in_frame, then bitblts the whole buffer
+  -- to the screen atomically. On T1/T2 these are no-ops and writes
+  -- go straight to the screen (mild tearing possible, no worse than
+  -- before — the diff-flush still emits only changed cells).
+  gpu.begin_frame()
   self.buffer:flush(gpu)
+  gpu.end_frame()
   self.dirty = false
 end
 
@@ -128,6 +135,7 @@ function Compositor:run()
       local ev = table.remove(self.queue, 1)
       if ev.type == "resize" then
         self.buffer:resize(ev.w, ev.h)
+        if gpu.reset_backbuffer then gpu.reset_backbuffer() end
         self.root:layout(1, 1, ev.w, ev.h)
         self.root:invalidate()
       end

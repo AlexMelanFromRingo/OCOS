@@ -33,6 +33,15 @@ local sb_in                                       -- in-progress line buffer
 local scroll_off                                  -- 0 = live; > 0 = N lines back from tail
 local input_handle
 
+-- Input gate: while the GUI compositor owns the screen, sessiond
+-- mounts a gate that returns false. Both `on_scroll` (wheel events)
+-- and `read_line` (key/clipboard events) consult it before painting,
+-- so the GUI is the sole consumer while it owns the screen. The
+-- declaration has to come BEFORE on_scroll's definition or on_scroll
+-- captures a global (nil) instead of this local.
+local input_gate = function() return true end
+function M.set_input_gate(fn) input_gate = fn or function() return true end end
+
 local function size() return gpu.size() end
 
 local function scroll_up_screen(n)
@@ -204,14 +213,6 @@ local function history_list(h)
   if h.all then return h:all() end
   return h.entries or {}
 end
-
--- Input gate: while the GUI compositor owns the screen, sessiond
--- mounts a gate that returns false. Read_line then ignores key_down /
--- clipboard events so the GUI is the sole consumer; the gate flips
--- back open on svc.resume.sessiond. Without this both layers double-
--- echoed every keystroke.
-local input_gate = function() return true end
-function M.set_input_gate(fn) input_gate = fn or function() return true end end
 
 -- Masked password reader — shared between sessiond's login(), passwd,
 -- useradd and setup-root so all four handle backspace identically.

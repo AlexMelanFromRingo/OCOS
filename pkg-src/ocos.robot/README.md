@@ -14,17 +14,45 @@ script without first installing this pack.
 
 ## Install
 
-```sh
-# Build the package on the dev host (already done in the repo, but
-# this is how you'd rebuild after editing pkg-src/ocos.robot/bin/*).
-tools/pack.py pkg-src/ocos.robot -o dist/ocos.robot
+There are two install paths on a real robot running OCOS. Both end up
+with the same nine commands in `/bin/`.
 
-# On the target robot (must be running OCOS):
-pkg install /path/to/dist/ocos.robot
+### A. From the official registry (recommended)
+
+The OCOS repo doubles as a static package registry hosted on
+`raw.githubusercontent.com`. The default `/etc/registries.cfg` already
+points at it, so on a freshly installed OCOS robot you just need an
+internet card and:
+
+```sh
+pkg install ocos.robot
 ```
 
-After install, the nine commands below live in `/bin/` and are on the
-default PATH.
+That fetches the manifest + every file under
+`dist/registry/ocos.robot/<version>/` over HTTPS, verifies sha256, and
+installs into `/bin/`.
+
+### B. From a local checkout
+
+If the robot can't reach the internet (or you're hacking on the pack
+itself), grab the repo with the in-OCOS `git clone` and point
+`pkg install` at the staged registry version directory:
+
+```sh
+git clone https://github.com/AlexMelanFromRingo/OCOS /tmp/OCOS
+pkg install /tmp/OCOS/dist/registry/ocos.robot/0.1.1
+```
+
+### Rebuilding after edits (dev host, not the robot)
+
+```sh
+# Edit pkg-src/ocos.robot/bin/*.lua on your dev machine, then:
+tools/build-registry.py        # regenerates dist/registry/ for every pkg
+```
+
+`build-registry.py` walks `pkg-src/*/`, runs `pack.py` for each, and
+emits a fresh `dist/registry/index.cfg`. Commit + push and the
+official registry serves the new version.
 
 ## Architecture: why these scripts don't strand the robot
 

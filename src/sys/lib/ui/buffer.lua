@@ -75,13 +75,94 @@ local function commit_run(gpu, x, y, run, fg, bg)
   if #run == 0 then return end
   gpu.set_fg(fg)
   gpu.set_bg(bg)
+  -- Solid run of one character: gpu.fill is one op regardless of
+  -- length, gpu.set with a concatenated string is one op too but
+  -- allocates the string. Prefer fill for runs >= 2 same-char cells.
+  if #run >= 2 then
+    local first = run[1]
+    local solid = true
+    for i = 2, #run do
+      if run[i] ~= first then solid = false; break end
+    end
+    if solid then
+      gpu.fill(x, y, #run, 1, first)
+      return
+    end
+  end
   gpu.set(x, y, table.concat(run))
 end
 
+-- Find the largest rectangle of identical (ch, fg, bg) cells starting
+-- at (x0, y0) that ALL need to be repainted (i.e., none match prev).
+-- Returns w, h (both ≥ 1). Caller is responsible for marking handled
+-- cells so the row-by-row pass below skips them.
+local function find_rect(self, x0, y0, base0)
+  local i0 = base0 + x0
+  local ch, fg, bg = self.cur_ch[i0], self.cur_fg[i0], self.cur_bg[i0]
+  -- Extend right on row y0.
+  local rw = 1
+  while x0 + rw <= self.w do
+    local i = base0 + x0 + rw
+    if self.cur_ch[i] ~= ch or self.cur_fg[i] ~= fg or self.cur_bg[i] ~= bg then break end
+    if self.prev_ch[i] == ch and self.prev_fg[i] == fg and self.prev_bg[i] == bg then break end
+    rw = rw + 1
+  end
+  -- Extend down: each subsequent row must match the (ch,fg,bg) across
+  -- the full width [x0, x0+rw-1] AND none of those cells may already
+  -- match prev (otherwise we'd repaint clean cells).
+  local rh = 1
+  while y0 + rh <= self.h do
+    local row_base = (y0 + rh - 1) * self.w
+    local ok = true
+    for dx = 0, rw - 1 do
+      local i = row_base + x0 + dx
+      if self.cur_ch[i] ~= ch or self.cur_fg[i] ~= fg or self.cur_bg[i] ~= bg then ok = false; break end
+      if self.prev_ch[i] == ch and self.prev_fg[i] == fg and self.prev_bg[i] == bg then ok = false; break end
+    end
+    if not ok then break end
+    rh = rh + 1
+  end
+  return rw, rh
+end
+
 function Buffer:flush(gpu)
-  -- Emit minimal gpu ops to bring the screen in sync with the current frame.
-  -- We don't currently coalesce vertical fills; horizontal is the common
-  -- case and the test suite will reveal where we need vertical coalescing.
+  -- Two-pass diff emission:
+  --   1. Scan for rectangles of identical (ch,fg,bg) cells that need
+  --      repainting; emit one gpu.fill per rectangle. Cheap wins on
+  --      widget backgrounds, taskbar fills, large solid wallpaper.
+  --   2. Row-by-row horizontal-run pass for any remaining changed
+  --      cells (mixed-character runs of same fg/bg).
+  -- Pass 1 markings live in self.prev_* (each handled cell gets its
+  -- prev_* equal to cur_*), so pass 2 naturally skips them.
+  local RECT_MIN = 4                                  -- ignore tiny rects
+  for y = 1, self.h do
+    local base = (y - 1) * self.w
+    local x = 1
+    while x <= self.w do
+      local i = base + x
+      local cch, cfg, cbg = self.cur_ch[i], self.cur_fg[i], self.cur_bg[i]
+      if self.prev_ch[i] == cch and self.prev_fg[i] == cfg and self.prev_bg[i] == cbg then
+        x = x + 1
+      else
+        local rw, rh = find_rect(self, x, y, base)
+        if rw * rh >= RECT_MIN and (rw >= 2 or rh >= 2) then
+          gpu.set_fg(cfg); gpu.set_bg(cbg)
+          gpu.fill(x, y, rw, rh, cch)
+          for dy = 0, rh - 1 do
+            local rb = (y + dy - 1) * self.w
+            for dx = 0, rw - 1 do
+              local j = rb + x + dx
+              self.prev_ch[j], self.prev_fg[j], self.prev_bg[j] = cch, cfg, cbg
+            end
+          end
+          x = x + rw
+        else
+          x = x + 1
+        end
+      end
+    end
+  end
+
   for y = 1, self.h do
     local base = (y - 1) * self.w
     local x = 1

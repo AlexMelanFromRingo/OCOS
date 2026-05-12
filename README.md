@@ -92,7 +92,18 @@ tools/lint.sh         # static check the Lua source
 tools/test-boot.sh    # boot OCOS in self-test mode and report
 tools/run-emu.sh      # boot OCOS interactively
 tools/pack.py <dir> -o <out>   # build a .ocpkg from a project directory
+tools/build-registry.py        # rebuild dist/registry/ from every pkg-src/*/
 ```
+
+### Package registry
+
+This repo also serves as the canonical OCOS package registry:
+`dist/registry/` is a static tree (`index.cfg` + `<id>/<version>/`)
+hosted on `raw.githubusercontent.com`. A fresh OCOS install ships a
+default entry in `/etc/registries.cfg` pointing at it, so on the robot
+side you can `pkg install ocos.robot` and it just works. To publish a
+new package, drop a directory under `pkg-src/`, run
+`tools/build-registry.py`, commit + push.
 
 The boot self-test currently exercises 28 checks: kernel scheduling,
 IPC, VFS, the GPU driver, the shell pipeline / redirect / control flow,
